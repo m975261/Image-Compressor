@@ -23,6 +23,7 @@ export const conversionResultSchema = z.object({
   frameCount: z.number(),
   downloadUrl: z.string(),
   previewUrl: z.string(),
+  downloadFilename: z.string(),
   success: z.boolean(),
   error: z.string().optional(),
 });

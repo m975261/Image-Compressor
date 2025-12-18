@@ -229,6 +229,7 @@ export async function registerRoutes(
 
       const originalInfo = await getGifInfo(req.file.path);
       const originalSize = fs.statSync(req.file.path).size;
+      const originalFilename = req.file.originalname;
 
       const outputId = randomUUID();
       const outputPath = path.join(CONVERTED_DIR, `${outputId}.gif`);
@@ -253,6 +254,12 @@ export async function registerRoutes(
       const finalSize = fs.statSync(outputPath).size;
       const finalInfo = await getGifInfo(outputPath);
 
+      const version = storage.getNextConversionVersion();
+      const versionStr = String(version).padStart(2, '0');
+      const baseNameWithoutExt = path.basename(originalFilename, path.extname(originalFilename));
+      const first3Chars = baseNameWithoutExt.slice(0, 3).replace(/[^a-zA-Z0-9]/g, 'x') || 'xxx';
+      const downloadFilename = `${first3Chars}conv${versionStr}.gif`;
+
       const conversionResult = await storage.saveConversionResult({
         originalSize,
         finalSize,
@@ -263,8 +270,9 @@ export async function registerRoutes(
         frameCount: finalInfo.frames,
         downloadUrl: `/api/converted/${outputId}.gif`,
         previewUrl: `/api/converted/${outputId}.gif`,
+        downloadFilename,
         success: true
-      });
+      }, outputId);
 
       res.json(conversionResult);
     } catch (error: any) {
@@ -273,7 +281,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/converted/:filename", (req, res) => {
+  app.get("/api/converted/:filename", async (req, res) => {
     const sanitized = sanitizeFilename(req.params.filename);
     if (!sanitized) {
       return res.status(400).json({ message: "Invalid filename" });
@@ -298,8 +306,11 @@ export async function registerRoutes(
       return res.status(404).json({ message: "File not found" });
     }
 
+    const conversionResult = await storage.getConversionResult(fileId);
+    const downloadName = conversionResult?.downloadFilename || sanitized;
+
     res.setHeader("Content-Type", "image/gif");
-    res.setHeader("Content-Disposition", `attachment; filename="${sanitized}"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${downloadName}"`);
     res.sendFile(filePath);
   });
 

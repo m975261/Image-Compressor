@@ -8,17 +8,38 @@ export interface IStorage {
   deleteUploadedFile(id: string): Promise<boolean>;
   getExpiredFiles(): Promise<UploadedFile[]>;
   
-  saveConversionResult(result: Omit<ConversionResult, "id">): Promise<ConversionResult>;
+  saveConversionResult(result: Omit<ConversionResult, "id">, customId?: string): Promise<ConversionResult>;
   getConversionResult(id: string): Promise<ConversionResult | undefined>;
+  
+  getNextConversionVersion(): number;
 }
 
 export class MemStorage implements IStorage {
   private uploadedFiles: Map<string, UploadedFile>;
   private conversionResults: Map<string, ConversionResult>;
+  private conversionVersion: number;
+  private lastConversionDate: string;
 
   constructor() {
     this.uploadedFiles = new Map();
     this.conversionResults = new Map();
+    this.conversionVersion = 0;
+    this.lastConversionDate = this.getTodayDateString();
+  }
+
+  private getTodayDateString(): string {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
+  getNextConversionVersion(): number {
+    const today = this.getTodayDateString();
+    if (today !== this.lastConversionDate) {
+      this.conversionVersion = 0;
+      this.lastConversionDate = today;
+    }
+    this.conversionVersion++;
+    return this.conversionVersion;
   }
 
   async saveUploadedFile(file: Omit<UploadedFile, "id">, customId?: string): Promise<UploadedFile> {
@@ -49,8 +70,8 @@ export class MemStorage implements IStorage {
     );
   }
 
-  async saveConversionResult(result: Omit<ConversionResult, "id">): Promise<ConversionResult> {
-    const id = randomUUID();
+  async saveConversionResult(result: Omit<ConversionResult, "id">, customId?: string): Promise<ConversionResult> {
+    const id = customId || randomUUID();
     const conversionResult: ConversionResult = { ...result, id };
     this.conversionResults.set(id, conversionResult);
     return conversionResult;

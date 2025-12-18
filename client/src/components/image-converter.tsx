@@ -433,9 +433,9 @@ export function ImageConverter() {
                   asChild
                   data-testid="button-download"
                 >
-                  <a href={result.downloadUrl} download>
+                  <a href={result.downloadUrl} download={result.downloadFilename}>
                     <Download className="w-4 h-4 mr-2" />
-                    Download Converted GIF
+                    Download as {result.downloadFilename}
                   </a>
                 </Button>
               </div>
