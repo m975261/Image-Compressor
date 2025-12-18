@@ -1,18 +1,56 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+export const conversionModes = ["yalla_ludo", "custom"] as const;
+export type ConversionMode = typeof conversionModes[number];
+
+export const conversionRequestSchema = z.object({
+  mode: z.enum(conversionModes),
+  maxFileSize: z.number().min(0.1).max(50).optional(),
+  maxWidth: z.number().min(10).max(2000).optional(),
+  maxHeight: z.number().min(10).max(2000).optional(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export type ConversionRequest = z.infer<typeof conversionRequestSchema>;
+
+export const conversionResultSchema = z.object({
+  id: z.string(),
+  originalSize: z.number(),
+  finalSize: z.number(),
+  originalWidth: z.number(),
+  originalHeight: z.number(),
+  finalWidth: z.number(),
+  finalHeight: z.number(),
+  frameCount: z.number(),
+  downloadUrl: z.string(),
+  previewUrl: z.string(),
+  success: z.boolean(),
+  error: z.string().optional(),
 });
 
+export type ConversionResult = z.infer<typeof conversionResultSchema>;
+
+export const uploadedFileSchema = z.object({
+  id: z.string(),
+  fileName: z.string(),
+  fileSize: z.number(),
+  mimeType: z.string(),
+  downloadUrl: z.string(),
+  expiresAt: z.string(),
+  createdAt: z.string(),
+});
+
+export type UploadedFile = z.infer<typeof uploadedFileSchema>;
+
+export const fileUploadRequestSchema = z.object({
+  expiryHours: z.number().min(0.1).max(24).default(24),
+});
+
+export type FileUploadRequest = z.infer<typeof fileUploadRequestSchema>;
+
+export const users = {} as any;
+export const insertUserSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+});
 export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export type User = { id: string; username: string; password: string };
