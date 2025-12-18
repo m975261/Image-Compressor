@@ -1,0 +1,239 @@
+Build a secure web application with two tabs:
+(A) Image Converter and (B) Temporary File Sharing.
+
+The application must be production-ready, deterministic, and compliant with the constraints below.
+
+A) Image Converter Tab
+1. Purpose
+
+Allow users to upload an animated GIF and convert it according to either:
+
+Yalla Ludo preset, or
+
+Custom (“Other”) settings
+
+The animation must never break.
+
+2. User Interface
+A. Upload
+
+Accept animated GIF only
+
+Reject static images and non-GIF formats
+
+Validate on both client and server
+
+B. Mode Selection
+
+Use radio buttons or mutually exclusive checkboxes:
+
+Option 1: Yalla Ludo
+
+No manual inputs visible
+
+Fixed rules applied automatically
+
+Option 2: Other (Custom)
+
+Show input fields:
+
+Maximum file size (MB)
+
+Maximum width (px)
+
+Maximum height (px)
+
+C. Convert Button
+
+Disabled until:
+
+Valid GIF uploaded
+
+Mode selected
+
+Required custom inputs provided (if applicable)
+
+D. Output
+
+Animated preview
+
+Final file size
+
+Final width × height
+
+Download button
+
+3. Conversion Rules (CRITICAL)
+General Rules (All Modes)
+
+Animation must remain animated
+
+Frame order preserved
+
+No frame flattening
+
+No freezing
+
+No frame corruption
+
+Transparency preserved if present
+
+Aspect ratio preserved
+
+No cropping
+
+No stretching
+
+Yalla Ludo Preset (Hard Limits)
+
+Maximum file size: 2 MB
+
+Maximum width: 180 px
+
+Maximum height: 180 px
+
+If limits are exceeded, apply optimization in this exact order:
+
+Resize (maintain aspect ratio)
+
+Palette optimization
+
+Minimal frame-rate reduction
+
+Trim animation duration from the END ONLY
+
+If still above limits, return a clear error.
+
+Custom Mode
+
+User defines:
+
+Max file size (MB)
+
+Max width (px)
+
+Max height (px)
+
+Apply the same optimization order
+
+Duration trimming only if required, and only from the end
+
+4. Backend Requirements (Image Tab)
+
+Node.js backend
+
+Use reliable animation-safe tools such as:
+
+gifsicle
+
+or ffmpeg
+
+Preserve loop behavior
+
+Preserve animation timing as much as possible
+
+B) Temporary File Sharing Tab
+1. Purpose
+
+Allow users to upload any file type and receive a temporary download link.
+
+2. User Interface
+A. Upload
+
+Accept any file type
+
+Display:
+
+File name
+
+File size
+
+B. Expiry Selection
+
+Default expiry: 24 hours
+
+User may choose any shorter duration
+
+User cannot exceed 24 hours
+
+Allow manual early deletion (reduce remaining time)
+
+C. Output
+
+Generate a unique download link
+
+Display:
+
+Expiry time countdown
+
+Manual delete button
+
+3. File Retention Rules (Hard Constraints)
+
+Files must be automatically deleted when expiry time is reached
+
+Files must not be extendable beyond 24 hours
+
+Expiry reduction is allowed
+
+Expiry extension is forbidden
+
+Deleted files must be unrecoverable
+
+4. Backend Requirements (File Sharing Tab)
+
+Secure file storage (local or object storage)
+
+Unique, non-guessable URLs
+
+Background cleanup job (cron / scheduler)
+
+Validate expiration on every download request
+
+5. Security & Stability
+
+No silent failures
+
+Clear validation messages
+
+File size limits configurable
+
+Safe handling of concurrent uploads
+
+No public file listing
+
+No persistent storage beyond expiry
+
+6. Application Structure
+
+Tab-based UI (Image | File Sharing)
+
+Clean separation of logic
+
+Clear folder structure
+
+Environment-based configuration
+
+7. Deliverables
+
+Fully working web app
+
+Clear README explaining:
+
+Setup
+
+Image conversion flow
+
+File expiration logic
+
+No placeholder logic
+
+No broken animations
+
+Non-Negotiable
+
+GIF animation must never break
+
+File retention must never exceed 24 hours
+
+Duration trimming must only remove frames from the END
