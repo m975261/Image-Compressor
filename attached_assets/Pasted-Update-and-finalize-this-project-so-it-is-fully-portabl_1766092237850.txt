@@ -1,0 +1,195 @@
+Update and finalize this project so it is fully portable, Docker-ready, and Unraid-compatible when pushed to GitHub.
+
+1. Project Portability (Mandatory)
+
+Remove all Replit-specific assumptions and dependencies
+
+Do not rely on:
+
+Replit environment variables
+
+Replit filesystem paths
+
+Replit startup commands
+
+The app must run identically in:
+
+Local Node.js
+
+Docker container
+
+Unraid Docker environment
+
+2. Server Binding (Critical)
+
+Ensure the server listens on:
+
+0.0.0.0
+
+
+Port must be configurable via environment variable:
+
+process.env.PORT || 3000
+
+3. Filesystem & Storage Rules
+
+All runtime-generated files must be written to:
+
+/app/data
+
+
+No writes to project root or temporary OS paths
+
+Create subfolders if missing at runtime
+
+All paths must be configurable via environment variable:
+
+DATA_PATH=/app/data
+
+4. Docker Artifacts (Required)
+
+Ensure the following files exist in the repository root:
+
+A. Dockerfile
+
+Base image: node:20-alpine
+
+Install system dependencies:
+
+gifsicle
+
+ffmpeg
+
+No use of systemd
+
+No GUI dependencies
+
+No hardcoded secrets
+
+Expose a single port
+
+B. .dockerignore
+
+Exclude:
+
+node_modules
+
+.git
+
+.replit
+
+replit.nix
+
+logs
+
+.env
+
+5. Environment Variables (No Secrets in Code)
+
+All configurable values must be read from process.env
+
+Provide .env.example
+
+Never commit .env
+
+6. Startup & Lifecycle
+
+App must start with:
+
+npm start
+
+
+No custom Replit run commands
+
+No background daemons outside Node.js
+
+Any cleanup logic must run via:
+
+Node timers
+
+Scheduled jobs inside the app
+
+7. Dependency Management
+
+Ensure:
+
+package.json is complete
+
+Lock file exists (package-lock.json)
+
+No global npm installs
+
+No dev-only packages required at runtime
+
+8. File Sharing Expiry Logic
+
+Expiration logic must:
+
+Survive container restarts
+
+Rely on timestamps stored with the file
+
+Not depend on in-memory timers alone
+
+9. Security & Stability
+
+Validate all uploads server-side
+
+Reject invalid file types for GIF conversion
+
+Enforce file size limits
+
+Handle concurrent requests safely
+
+Fail loudly with clear error messages
+
+10. GitHub Readiness
+
+Repository must be runnable with:
+
+docker build .
+docker run
+
+
+Include README with:
+
+Local run instructions
+
+Docker build instructions
+
+Unraid notes
+
+Non-Negotiable
+
+GIF animation must never break
+
+File retention must never exceed 24 hours
+
+No Replit-only logic anywhere in the codebase
+
+Output Expected
+
+Clean repository
+
+Docker-buildable without modification
+
+Push-ready for GitHub
+
+Compatible with Docker Hub automated builds
+
+Fully functional on Unraid
+
+Final Guidance (for you)
+
+Give only this prompt to Replit AI.
+Do not add explanations — let it implement.
+
+If you want next, I can:
+
+Review the actual repo before push
+
+Validate Docker Hub build compatibility
+
+Generate a Unraid container template
+
+Provide a versioning & rollback strategy
