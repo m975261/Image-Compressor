@@ -1,0 +1,188 @@
+Prepare this project so that when it is pushed to GitHub, it can be automatically built by Docker Hub and run on Unraid 7.0.1 Docker without requiring any manual fixes or post-deployment configuration.
+
+1. Remove Platform Assumptions
+
+Remove all Replit-specific files, logic, and environment assumptions
+
+Do not rely on Replit filesystem paths, startup commands, or ports
+
+The app must run identically in:
+
+Local Node.js
+
+Docker container
+
+Unraid Docker environment
+
+2. Deterministic Startup (CRITICAL)
+
+The application must start with:
+
+npm start
+
+
+npm start must run the server directly
+
+No interactive scripts
+
+No environment detection logic
+
+3. Network Binding & Port (MANDATORY)
+
+The server must listen on:
+
+0.0.0.0
+
+
+The application must default to port 4321
+
+Port must be configurable via environment variable but fallback must be 4321:
+
+process.env.PORT || 4321
+
+
+Do not hardcode any other port anywhere in the project
+
+4. Filesystem & Persistence (MANDATORY)
+
+All runtime files (uploads, conversions, shared files) must be written only to:
+
+/app/data
+
+
+Create required subdirectories at startup if missing
+
+Do not write to:
+
+Project root
+
+/tmp
+
+OS temp paths
+
+Allow overriding via:
+
+DATA_PATH=/app/data
+
+5. Docker Artifacts (NON-NEGOTIABLE)
+
+Ensure the following files exist at the repository root:
+
+A. Dockerfile
+
+Base image: node:20-alpine
+
+Install system dependencies:
+
+gifsicle
+
+ffmpeg
+
+No systemd
+
+No GUI dependencies
+
+No shell wrapper scripts
+
+Expose port 4321
+
+Start application using:
+
+CMD ["npm","start"]
+
+B. .dockerignore
+
+Exclude:
+
+node_modules
+.git
+.replit
+replit.nix
+.env
+logs
+tmp
+
+6. Dependency Hygiene
+
+package.json must be complete
+
+package-lock.json must exist
+
+No global npm installs
+
+No dev-only packages required at runtime
+
+7. Environment Variables (Production-Safe)
+
+All configuration must come from process.env
+
+Provide .env.example
+
+Never commit .env
+
+No secrets in source code
+
+8. File Sharing Expiry Logic
+
+File expiration must:
+
+Be timestamp-based
+
+Survive container restarts
+
+Enforce a hard maximum of 24 hours
+
+Do not rely on in-memory timers alone
+
+9. Unraid Zero-Touch Compatibility
+
+Container must run correctly with only:
+
+Port mapping (host → 4321)
+
+Volume mapping to /app/data
+
+No privileged mode
+
+No post-deploy configuration
+
+No runtime flags required
+
+10. README (REQUIRED)
+
+Include:
+
+Docker build instructions
+
+Docker run example using port 4321
+
+Note explicitly:
+
+Compatible with Unraid 7.0.1
+
+Non-Negotiable Constraints
+
+Animated GIFs must never break
+
+Duration trimming only from the end
+
+File retention must never exceed 24 hours
+
+Application must run correctly on first pull
+
+Output Expected
+
+Clean GitHub repository
+
+Docker Hub automated build succeeds
+
+Unraid container starts immediately
+
+Application listens on port 4321
+
+No manual fixes required
+
+Final Instruction
+
+Apply all of the above before pushing to GitHub.
+Do not ask for confirmation — implement directly.

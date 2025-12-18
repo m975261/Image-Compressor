@@ -1,0 +1,12 @@
+node_modules
+.git
+.replit
+replit.nix
+.env
+logs
+tmp
+dist
+*.log
+.DS_Store
+*.md
+!README.md

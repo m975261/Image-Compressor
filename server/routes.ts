@@ -9,18 +9,9 @@ import { randomUUID } from "crypto";
 import cron from "node-cron";
 import { storage } from "./storage";
 import { conversionRequestSchema, fileUploadRequestSchema } from "@shared/schema";
+import { UPLOAD_DIR, CONVERTED_DIR, SHARED_DIR } from "./config";
 
 const execAsync = promisify(exec);
-
-const UPLOAD_DIR = path.join(process.cwd(), "uploads");
-const CONVERTED_DIR = path.join(process.cwd(), "converted");
-const SHARED_DIR = path.join(process.cwd(), "shared_files");
-
-[UPLOAD_DIR, CONVERTED_DIR, SHARED_DIR].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
 
 function isValidUUID(str: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
