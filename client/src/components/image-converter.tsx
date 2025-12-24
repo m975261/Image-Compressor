@@ -26,8 +26,10 @@ export function ImageConverter() {
   const [mode, setMode] = useState<ConversionMode | null>(null);
   const [customSettings, setCustomSettings] = useState({
     maxFileSize: 2,
-    maxWidth: 180,
-    maxHeight: 180,
+    minWidth: "",
+    maxWidth: "",
+    minHeight: "",
+    maxHeight: "",
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const [result, setResult] = useState<ConversionResult | null>(null);
@@ -97,8 +99,10 @@ export function ImageConverter() {
 
       if (mode === "custom") {
         formData.append("maxFileSize", customSettings.maxFileSize.toString());
-        formData.append("maxWidth", customSettings.maxWidth.toString());
-        formData.append("maxHeight", customSettings.maxHeight.toString());
+        if (customSettings.minWidth) formData.append("minWidth", customSettings.minWidth.toString());
+        if (customSettings.maxWidth) formData.append("maxWidth", customSettings.maxWidth.toString());
+        if (customSettings.minHeight) formData.append("minHeight", customSettings.minHeight.toString());
+        if (customSettings.maxHeight) formData.append("maxHeight", customSettings.maxHeight.toString());
       }
 
       const response = await fetch("/api/convert", {
@@ -118,8 +122,7 @@ export function ImageConverter() {
     },
   });
 
-  const canConvert = file && mode && (mode === "yalla_ludo" || 
-    (customSettings.maxFileSize > 0 && customSettings.maxWidth > 0 && customSettings.maxHeight > 0));
+  const canConvert = file && mode && (mode === "yalla_ludo" || customSettings.maxFileSize > 0);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -221,7 +224,10 @@ export function ImageConverter() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium">Yalla Ludo</span>
                   <Badge variant="secondary" className="text-xs font-mono">
-                    2MB / 180x180px
+                    Max 2MB
+                  </Badge>
+                  <Badge variant="outline" className="text-xs font-mono">
+                    Min 180x180px
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -247,62 +253,109 @@ export function ImageConverter() {
               </div>
 
               {mode === "custom" && (
-                <div className="grid grid-cols-3 gap-4 ml-8">
-                  <div className="space-y-2">
-                    <Label htmlFor="maxFileSize" className="text-sm font-medium">
-                      Max Size (MB)
-                    </Label>
-                    <Input
-                      id="maxFileSize"
-                      type="number"
-                      min={0.1}
-                      max={50}
-                      step={0.1}
-                      value={customSettings.maxFileSize}
-                      onChange={(e) => setCustomSettings(prev => ({
-                        ...prev,
-                        maxFileSize: parseFloat(e.target.value) || 0
-                      }))}
-                      className="font-mono text-right"
-                      data-testid="input-max-file-size"
-                    />
+                <div className="space-y-4 ml-8">
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="maxFileSize" className="text-sm font-medium">
+                        Max File Size (MB) *
+                      </Label>
+                      <Input
+                        id="maxFileSize"
+                        type="number"
+                        min={0.1}
+                        max={50}
+                        step={0.1}
+                        value={customSettings.maxFileSize}
+                        onChange={(e) => setCustomSettings(prev => ({
+                          ...prev,
+                          maxFileSize: parseFloat(e.target.value) || 0
+                        }))}
+                        className="font-mono text-right max-w-32"
+                        data-testid="input-max-file-size"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="maxWidth" className="text-sm font-medium">
-                      Max Width (px)
-                    </Label>
-                    <Input
-                      id="maxWidth"
-                      type="number"
-                      min={10}
-                      max={2000}
-                      value={customSettings.maxWidth}
-                      onChange={(e) => setCustomSettings(prev => ({
-                        ...prev,
-                        maxWidth: parseInt(e.target.value) || 0
-                      }))}
-                      className="font-mono text-right"
-                      data-testid="input-max-width"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="minWidth" className="text-sm font-medium">
+                        Min Width (px)
+                      </Label>
+                      <Input
+                        id="minWidth"
+                        type="number"
+                        min={1}
+                        max={2000}
+                        placeholder="Optional"
+                        value={customSettings.minWidth}
+                        onChange={(e) => setCustomSettings(prev => ({
+                          ...prev,
+                          minWidth: e.target.value
+                        }))}
+                        className="font-mono text-right"
+                        data-testid="input-min-width"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="maxWidth" className="text-sm font-medium">
+                        Max Width (px)
+                      </Label>
+                      <Input
+                        id="maxWidth"
+                        type="number"
+                        min={1}
+                        max={2000}
+                        placeholder="Optional"
+                        value={customSettings.maxWidth}
+                        onChange={(e) => setCustomSettings(prev => ({
+                          ...prev,
+                          maxWidth: e.target.value
+                        }))}
+                        className="font-mono text-right"
+                        data-testid="input-max-width"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="maxHeight" className="text-sm font-medium">
-                      Max Height (px)
-                    </Label>
-                    <Input
-                      id="maxHeight"
-                      type="number"
-                      min={10}
-                      max={2000}
-                      value={customSettings.maxHeight}
-                      onChange={(e) => setCustomSettings(prev => ({
-                        ...prev,
-                        maxHeight: parseInt(e.target.value) || 0
-                      }))}
-                      className="font-mono text-right"
-                      data-testid="input-max-height"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="minHeight" className="text-sm font-medium">
+                        Min Height (px)
+                      </Label>
+                      <Input
+                        id="minHeight"
+                        type="number"
+                        min={1}
+                        max={2000}
+                        placeholder="Optional"
+                        value={customSettings.minHeight}
+                        onChange={(e) => setCustomSettings(prev => ({
+                          ...prev,
+                          minHeight: e.target.value
+                        }))}
+                        className="font-mono text-right"
+                        data-testid="input-min-height"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="maxHeight" className="text-sm font-medium">
+                        Max Height (px)
+                      </Label>
+                      <Input
+                        id="maxHeight"
+                        type="number"
+                        min={1}
+                        max={2000}
+                        placeholder="Optional"
+                        value={customSettings.maxHeight}
+                        onChange={(e) => setCustomSettings(prev => ({
+                          ...prev,
+                          maxHeight: e.target.value
+                        }))}
+                        className="font-mono text-right"
+                        data-testid="input-max-height"
+                      />
+                    </div>
                   </div>
+                  <p className="text-xs text-muted-foreground">* Required. Dimension fields are optional.</p>
                 </div>
               )}
             </label>

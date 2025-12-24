@@ -78,54 +78,83 @@ async function getGifInfo(filePath: string): Promise<{ width: number; height: nu
   }
 }
 
+interface OptimizeOptions {
+  maxSizeBytes: number;
+  minWidth?: number;
+  maxWidth?: number;
+  minHeight?: number;
+  maxHeight?: number;
+}
+
 async function optimizeGif(
   inputPath: string,
   outputPath: string,
-  maxWidth: number,
-  maxHeight: number,
-  maxSizeBytes: number
+  options: OptimizeOptions
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const info = await getGifInfo(inputPath);
     const currentSize = fs.statSync(inputPath).size;
     
-    if (currentSize <= maxSizeBytes && info.width <= maxWidth && info.height <= maxHeight) {
+    const { maxSizeBytes, minWidth, maxWidth, minHeight, maxHeight } = options;
+
+    if (minWidth && info.width < minWidth) {
+      return { success: false, error: `Image width (${info.width}px) is below minimum (${minWidth}px)` };
+    }
+    if (minHeight && info.height < minHeight) {
+      return { success: false, error: `Image height (${info.height}px) is below minimum (${minHeight}px)` };
+    }
+
+    const needsResize = (maxWidth && info.width > maxWidth) || (maxHeight && info.height > maxHeight);
+    const needsSizeReduction = currentSize > maxSizeBytes;
+
+    if (!needsResize && !needsSizeReduction) {
       fs.copyFileSync(inputPath, outputPath);
       return { success: true };
     }
 
-    let scale = 1;
-    if (info.width > maxWidth || info.height > maxHeight) {
-      const widthScale = maxWidth / info.width;
-      const heightScale = maxHeight / info.height;
-      scale = Math.min(widthScale, heightScale);
-    }
+    let targetWidth = info.width;
+    let targetHeight = info.height;
 
-    const newWidth = Math.floor(info.width * scale);
-    const newHeight = Math.floor(info.height * scale);
-
-    let cmd = `gifsicle -O3 --resize ${newWidth}x${newHeight} --colors 256 "${inputPath}" -o "${outputPath}"`;
-    await execAsync(cmd);
-
-    let resultSize = fs.statSync(outputPath).size;
-    
-    if (resultSize > maxSizeBytes) {
-      cmd = `gifsicle -O3 --resize ${newWidth}x${newHeight} --colors 128 "${inputPath}" -o "${outputPath}"`;
-      await execAsync(cmd);
-      resultSize = fs.statSync(outputPath).size;
-    }
-
-    if (resultSize > maxSizeBytes) {
-      cmd = `gifsicle -O3 --resize ${newWidth}x${newHeight} --colors 64 "${inputPath}" -o "${outputPath}"`;
-      await execAsync(cmd);
-      resultSize = fs.statSync(outputPath).size;
-    }
-
-    if (resultSize > maxSizeBytes && info.frames > 1) {
-      const outputInfo = await getGifInfo(outputPath);
-      const framesToKeep = Math.max(1, Math.floor(outputInfo.frames * (maxSizeBytes / resultSize)));
+    if (needsResize) {
+      let scale = 1;
+      if (maxWidth && info.width > maxWidth) {
+        scale = Math.min(scale, maxWidth / info.width);
+      }
+      if (maxHeight && info.height > maxHeight) {
+        scale = Math.min(scale, maxHeight / info.height);
+      }
+      targetWidth = Math.floor(info.width * scale);
+      targetHeight = Math.floor(info.height * scale);
       
-      if (framesToKeep < outputInfo.frames) {
+      if (minWidth && targetWidth < minWidth) targetWidth = minWidth;
+      if (minHeight && targetHeight < minHeight) targetHeight = minHeight;
+    }
+
+    let cmd = `gifsicle -O3 --resize ${targetWidth}x${targetHeight} --colors 256 "${inputPath}" -o "${outputPath}"`;
+    await execAsync(cmd);
+    let resultSize = fs.statSync(outputPath).size;
+
+    if (resultSize > maxSizeBytes) {
+      cmd = `gifsicle -O3 --resize ${targetWidth}x${targetHeight} --colors 128 "${inputPath}" -o "${outputPath}"`;
+      await execAsync(cmd);
+      resultSize = fs.statSync(outputPath).size;
+    }
+
+    if (resultSize > maxSizeBytes) {
+      cmd = `gifsicle -O3 --resize ${targetWidth}x${targetHeight} --colors 64 "${inputPath}" -o "${outputPath}"`;
+      await execAsync(cmd);
+      resultSize = fs.statSync(outputPath).size;
+    }
+
+    if (resultSize > maxSizeBytes && info.frames > 2) {
+      const outputInfo = await getGifInfo(outputPath);
+      let currentFrames = outputInfo.frames;
+      
+      while (resultSize > maxSizeBytes && currentFrames > 1) {
+        const framesToKeep = Math.max(1, currentFrames - Math.ceil(currentFrames * 0.1));
+        
+        if (framesToKeep >= currentFrames) break;
+        
         const tempPath = outputPath + ".temp.gif";
         fs.copyFileSync(outputPath, tempPath);
         
@@ -134,6 +163,7 @@ async function optimizeGif(
         
         fs.unlinkSync(tempPath);
         resultSize = fs.statSync(outputPath).size;
+        currentFrames = framesToKeep;
       }
     }
 
@@ -192,20 +222,22 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid conversion mode" });
       }
 
-      let maxFileSize: number;
-      let maxWidth: number;
-      let maxHeight: number;
+      let optimizeOptions: OptimizeOptions;
 
       if (mode === "yalla_ludo") {
-        maxFileSize = 2 * 1024 * 1024;
-        maxWidth = 180;
-        maxHeight = 180;
+        optimizeOptions = {
+          maxSizeBytes: 2 * 1024 * 1024,
+          minWidth: 180,
+          minHeight: 180,
+        };
       } else {
         const parsed = conversionRequestSchema.safeParse({
           mode: "custom",
           maxFileSize: parseFloat(req.body.maxFileSize || "2"),
-          maxWidth: parseInt(req.body.maxWidth || "180"),
-          maxHeight: parseInt(req.body.maxHeight || "180"),
+          minWidth: req.body.minWidth ? parseInt(req.body.minWidth) : undefined,
+          maxWidth: req.body.maxWidth ? parseInt(req.body.maxWidth) : undefined,
+          minHeight: req.body.minHeight ? parseInt(req.body.minHeight) : undefined,
+          maxHeight: req.body.maxHeight ? parseInt(req.body.maxHeight) : undefined,
         });
 
         if (!parsed.success) {
@@ -213,9 +245,13 @@ export async function registerRoutes(
           return res.status(400).json({ message: "Invalid custom settings" });
         }
 
-        maxFileSize = (parsed.data.maxFileSize || 2) * 1024 * 1024;
-        maxWidth = parsed.data.maxWidth || 180;
-        maxHeight = parsed.data.maxHeight || 180;
+        optimizeOptions = {
+          maxSizeBytes: (parsed.data.maxFileSize || 2) * 1024 * 1024,
+          minWidth: parsed.data.minWidth,
+          maxWidth: parsed.data.maxWidth,
+          minHeight: parsed.data.minHeight,
+          maxHeight: parsed.data.maxHeight,
+        };
       }
 
       const originalInfo = await getGifInfo(req.file.path);
@@ -228,9 +264,7 @@ export async function registerRoutes(
       const result = await optimizeGif(
         req.file.path,
         outputPath,
-        maxWidth,
-        maxHeight,
-        maxFileSize
+        optimizeOptions
       );
 
       fs.unlinkSync(req.file.path);
