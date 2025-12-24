@@ -25,7 +25,7 @@ const MAX_UPLOAD_SIZE = 100 * 1024 * 1024; // 100MB
 
 export function FileSharing() {
   const [file, setFile] = useState<File | null>(null);
-  const [expiryHours, setExpiryHours] = useState(5 / 60);
+  const [expiryMinutes, setExpiryMinutes] = useState(5);
   const [validationError, setValidationError] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -57,6 +57,7 @@ export function FileSharing() {
     }
 
     setFile(selectedFile);
+    setExpiryMinutes(5);
   }, [validateFile]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -85,7 +86,7 @@ export function FileSharing() {
 
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("expiryHours", expiryHours.toString());
+      formData.append("expiryHours", (expiryMinutes / 60).toString());
 
       const response = await fetch("/api/files/upload", {
         method: "POST",
@@ -216,15 +217,18 @@ export function FileSharing() {
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-medium">Expiry Time</Label>
                   <span className="text-sm font-mono text-muted-foreground" data-testid="text-expiry-display">
-                    {expiryHours} hour{expiryHours !== 1 ? "s" : ""}
+                    {expiryMinutes < 60 
+                      ? `${expiryMinutes} minute${expiryMinutes !== 1 ? "s" : ""}`
+                      : `${Math.floor(expiryMinutes / 60)} hour${Math.floor(expiryMinutes / 60) !== 1 ? "s" : ""}`
+                    }
                   </span>
                 </div>
                 <Slider
-                  value={[expiryHours]}
-                  onValueChange={([value]) => setExpiryHours(value)}
-                  min={1}
-                  max={24}
-                  step={1}
+                  value={[expiryMinutes]}
+                  onValueChange={([value]) => setExpiryMinutes(value)}
+                  min={5}
+                  max={1440}
+                  step={5}
                   className="w-full"
                   data-testid="slider-expiry"
                 />

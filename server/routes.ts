@@ -32,7 +32,7 @@ function isPathWithinDirectory(filePath: string, directory: string): boolean {
   return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
 }
 
-const imageUpload = multer({
+const gifUpload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
     filename: (req, file, cb) => {
@@ -42,8 +42,8 @@ const imageUpload = multer({
   }),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype !== "image/gif" && file.mimetype !== "image/png") {
-      cb(new Error("Only GIF and PNG files are allowed"));
+    if (file.mimetype !== "image/gif") {
+      cb(new Error("Only GIF files are allowed"));
       return;
     }
     cb(null, true);
@@ -75,15 +75,6 @@ async function getGifInfo(filePath: string): Promise<{ width: number; height: nu
     };
   } catch (error) {
     return { width: 0, height: 0, frames: 1 };
-  }
-}
-
-async function convertPngToGif(inputPath: string, outputPath: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    await execAsync(`ffmpeg -y -i "${inputPath}" -vf "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "${outputPath}"`);
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message || "PNG to GIF conversion failed" };
   }
 }
 
@@ -219,7 +210,7 @@ export async function registerRoutes(
   
   cron.schedule("* * * * *", cleanupExpiredFiles);
 
-  app.post("/api/convert", imageUpload.single("file"), async (req, res) => {
+  app.post("/api/convert", gifUpload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -263,38 +254,20 @@ export async function registerRoutes(
         };
       }
 
+      const originalInfo = await getGifInfo(req.file.path);
       const originalSize = fs.statSync(req.file.path).size;
       const originalFilename = req.file.originalname;
-      const isPng = req.file.mimetype === "image/png";
-
-      let inputForOptimize = req.file.path;
-      let tempGifPath: string | null = null;
-
-      if (isPng) {
-        tempGifPath = req.file.path + ".converted.gif";
-        const pngResult = await convertPngToGif(req.file.path, tempGifPath);
-        if (!pngResult.success) {
-          fs.unlinkSync(req.file.path);
-          return res.status(422).json({ message: pngResult.error });
-        }
-        inputForOptimize = tempGifPath;
-      }
-
-      const originalInfo = await getGifInfo(inputForOptimize);
 
       const outputId = randomUUID();
       const outputPath = path.join(CONVERTED_DIR, `${outputId}.gif`);
 
       const result = await optimizeGif(
-        inputForOptimize,
+        req.file.path,
         outputPath,
         optimizeOptions
       );
 
       fs.unlinkSync(req.file.path);
-      if (tempGifPath && fs.existsSync(tempGifPath)) {
-        fs.unlinkSync(tempGifPath);
-      }
 
       if (!result.success) {
         if (fs.existsSync(outputPath)) {
