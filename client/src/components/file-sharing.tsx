@@ -25,7 +25,7 @@ const MAX_UPLOAD_SIZE = 100 * 1024 * 1024; // 100MB
 
 export function FileSharing() {
   const [file, setFile] = useState<File | null>(null);
-  const [expiryHours, setExpiryHours] = useState(24);
+  const [expiryHours, setExpiryHours] = useState(5 / 60);
   const [validationError, setValidationError] = useState<string | null>(null);
   const { toast } = useToast();
 

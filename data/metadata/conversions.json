@@ -1,0 +1,30 @@
+{
+  "6db87893-3cd1-4412-b5dc-2eedf0ab9551": {
+    "originalSize": 93076,
+    "finalSize": 93076,
+    "originalWidth": 362,
+    "originalHeight": 300,
+    "finalWidth": 362,
+    "finalHeight": 300,
+    "frameCount": 10,
+    "downloadUrl": "/api/converted/6db87893-3cd1-4412-b5dc-2eedf0ab9551.gif",
+    "previewUrl": "/api/converted/6db87893-3cd1-4412-b5dc-2eedf0ab9551.gif",
+    "downloadFilename": "LINconv01.gif",
+    "success": true,
+    "id": "6db87893-3cd1-4412-b5dc-2eedf0ab9551"
+  },
+  "b7b27515-35fb-4282-8b3c-31838de1b177": {
+    "originalSize": 346258,
+    "finalSize": 346258,
+    "originalWidth": 498,
+    "originalHeight": 498,
+    "finalWidth": 498,
+    "finalHeight": 498,
+    "frameCount": 14,
+    "downloadUrl": "/api/converted/b7b27515-35fb-4282-8b3c-31838de1b177.gif",
+    "previewUrl": "/api/converted/b7b27515-35fb-4282-8b3c-31838de1b177.gif",
+    "downloadFilename": "twiconv02.gif",
+    "success": true,
+    "id": "b7b27515-35fb-4282-8b3c-31838de1b177"
+  }
+}

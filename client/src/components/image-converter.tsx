@@ -34,9 +34,9 @@ export function ImageConverter() {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [result, setResult] = useState<ConversionResult | null>(null);
 
-  const validateGif = useCallback((file: File): string | null => {
-    if (!file.type.includes("gif")) {
-      return "Please upload a GIF file only";
+  const validateImage = useCallback((file: File): string | null => {
+    if (!file.type.includes("gif") && !file.type.includes("png")) {
+      return "Please upload a GIF or PNG file";
     }
     if (file.size > MAX_UPLOAD_SIZE) {
       return "File size exceeds 10MB limit";
@@ -54,7 +54,7 @@ export function ImageConverter() {
       return;
     }
 
-    const error = validateGif(selectedFile);
+    const error = validateImage(selectedFile);
     if (error) {
       setValidationError(error);
       setFile(null);
@@ -65,7 +65,7 @@ export function ImageConverter() {
     setFile(selectedFile);
     const url = URL.createObjectURL(selectedFile);
     setPreviewUrl(url);
-  }, [validateGif]);
+  }, [validateImage]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -147,19 +147,19 @@ export function ImageConverter() {
               </div>
               <div className="text-center">
                 <p className="text-base font-medium text-foreground">
-                  Drop GIF here or click to browse
+                  Drop image here or click to browse
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Animated GIF only, max 10MB
+                  Animated GIF or PNG, max 10MB
                 </p>
               </div>
               <input
                 id="gif-upload"
                 type="file"
-                accept="image/gif"
+                accept="image/gif,image/png"
                 className="hidden"
                 onChange={handleFileInput}
-                data-testid="input-gif-upload"
+                data-testid="input-image-upload"
               />
             </div>
           ) : (
