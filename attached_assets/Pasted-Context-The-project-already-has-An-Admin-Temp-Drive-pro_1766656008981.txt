@@ -1,0 +1,234 @@
+Context
+The project already has:
+
+An Admin Temp Drive protected by password + Google Authenticator
+
+A Share Drive feature that generates a password-protected link
+
+This prompt is to change and harden the Share Drive behavior, not rewrite the feature.
+
+🎯 Required Change (Core Logic)
+🔄 Current behavior (to be changed)
+
+Share Drive exposes the admin’s main drive content
+
+✅ New required behavior
+
+When admin enables Share Drive, it must:
+
+Create a new, separate folder
+
+Folder starts EMPTY
+
+Folder is NOT linked to admin’s personal drive
+
+Each share link maps to its own isolated folder
+
+Admin drive = personal/private
+Shared drive = isolated temporary space
+
+📂 Drive Structure Rules
+
+Admin Drive
+
+Accessed only via admin password + OTP
+
+Contains admin’s personal files
+
+Admin can:
+
+Upload
+
+Download
+
+Delete
+
+See blocked IPs
+
+Shared Drive
+
+Created per share enable action
+
+Starts empty
+
+Accessible only via:
+
+Share link
+
+Share password
+
+Users can:
+
+Upload files
+
+Download files
+
+Users CANNOT:
+
+Delete files
+
+See admin files
+
+Enable/disable sharing
+
+See other shared drives
+
+🔐 Authentication & Security (Expanded)
+Password Failure Protection (GLOBAL)
+
+For ALL entry points:
+
+Admin login
+
+Share Drive access
+
+Rule:
+
+If password is entered wrong 3 times from the same IP:
+
+Block the IP for 2 days
+
+Block applies to:
+
+Admin login
+
+Shared drive access
+
+Blocking must be server-side
+
+IP Block Management (Admin Only)
+
+Inside Admin Temp Drive, add a sub-tab:
+
+Blocked IPs
+
+Admin can:
+
+View blocked IP list
+
+See:
+
+IP address
+
+Reason (admin login / share drive)
+
+Block expiry time
+
+Manually unblock IPs
+
+🔗 Share Drive Lifecycle (UPDATED)
+When Admin clicks Share Drive
+
+Prompt for:
+
+Share password
+
+Expiry time (default 5 minutes)
+
+On apply:
+
+Create:
+
+New folder
+
+New share ID
+
+New access token
+
+Associate:
+
+Folder ←→ share link
+
+Folder ←→ share password (hashed)
+
+Display:
+
+Share link
+
+Copy icon
+
+When User accesses Share Link
+
+Prompt for share password
+
+Apply IP blocking rules
+
+If password correct:
+
+Grant access to that specific shared folder
+
+Allow:
+
+Upload
+
+Download
+
+Deny:
+
+Delete
+
+Admin controls
+
+Other folders
+
+When Share Expires or Admin Disables
+
+Shared drive becomes inaccessible
+
+Folder is:
+
+Either deleted
+
+Or archived (developer choice)
+
+Share token invalidated
+
+System returns to default state
+
+🛡️ Security Constraints (NON-NEGOTIABLE)
+
+Admin files never exposed to shared users
+
+Each share = unique folder
+
+Passwords:
+
+Hashed
+
+Never stored plaintext
+
+IP blocking enforced before authentication
+
+No client-side enforcement of permissions
+
+No shared users can delete files
+
+🧪 Acceptance Criteria
+
+The change is correct only if:
+
+✅ Admin drive and shared drives are fully isolated
+✅ Each share link creates a new empty folder
+✅ Shared users never see admin files
+✅ Shared users can upload & download only
+✅ 3 failed password attempts block IP for 2 days
+✅ IP blocking applies to admin & shared access
+✅ Admin can view and manage blocked IPs
+✅ Admin controls sharing lifecycle
+✅ No regressions to existing Temp Drive logic
+
+📦 Deliverables
+
+Modify Share Drive logic to use isolated folders
+
+Add IP blocking logic (3 attempts → 2 days)
+
+Add Blocked IPs sub-tab for admin
+
+Update permission checks
+
+Brief explanation of changes made
+
+🔁 One-Line Summary
+
+Change Share Drive so each share creates an isolated empty folder, enforce IP blocking after 3 failed attempts, and allow admin to manage blocked IPs from within their personal Temp Drive.

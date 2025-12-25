@@ -80,11 +80,41 @@ export const tempDriveShareSchema = z.object({
   id: z.string(),
   token: z.string(),
   passwordHash: z.string(),
+  folderId: z.string(),
   expiresAt: z.string().nullable(),
   createdAt: z.string(),
   active: z.boolean(),
 });
 export type TempDriveShare = z.infer<typeof tempDriveShareSchema>;
+
+export const tempDriveShareFileSchema = z.object({
+  id: z.string(),
+  shareId: z.string(),
+  fileName: z.string(),
+  diskFileName: z.string(),
+  fileSize: z.number(),
+  mimeType: z.string(),
+  uploadedAt: z.string(),
+});
+export type TempDriveShareFile = z.infer<typeof tempDriveShareFileSchema>;
+
+export const tempDriveLoginAttemptSchema = z.object({
+  ip: z.string(),
+  type: z.enum(["admin", "share"]),
+  shareId: z.string().nullable(),
+  success: z.boolean(),
+  timestamp: z.string(),
+});
+export type TempDriveLoginAttempt = z.infer<typeof tempDriveLoginAttemptSchema>;
+
+export const tempDriveBlockedIpSchema = z.object({
+  ip: z.string(),
+  reason: z.enum(["admin_login", "share_access"]),
+  shareId: z.string().nullable(),
+  blockedAt: z.string(),
+  expiresAt: z.string(),
+});
+export type TempDriveBlockedIp = z.infer<typeof tempDriveBlockedIpSchema>;
 
 export const tempDriveSessionSchema = z.object({
   token: z.string(),
