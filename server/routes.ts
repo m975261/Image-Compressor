@@ -15,7 +15,9 @@ import {
   shareCreateRequestSchema,
   shareAccessRequestSchema,
   type TempDriveFile,
-  type TempDriveSession
+  type TempDriveShareFile,
+  type TempDriveSession,
+  type TempDriveBlockedIp
 } from "@shared/schema";
 import { UPLOAD_DIR, CONVERTED_DIR, SHARED_DIR, TEMP_DRIVE_DIR, getStorageInfo, isStorageNearFull } from "./config";
 import {
@@ -50,6 +52,74 @@ function isPathWithinDirectory(filePath: string, directory: string): boolean {
   const resolvedPath = path.resolve(filePath);
   const resolvedDir = path.resolve(directory);
   return resolvedPath.startsWith(resolvedDir + path.sep) || resolvedPath === resolvedDir;
+}
+
+function getClientIp(req: Request): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string") {
+    return forwarded.split(",")[0].trim();
+  }
+  return req.socket.remoteAddress || "unknown";
+}
+
+const MAX_LOGIN_ATTEMPTS = 3;
+const BLOCK_DURATION_HOURS = 48;
+
+async function checkAndRecordLoginAttempt(
+  ip: string,
+  type: "admin" | "share",
+  shareId: string | null,
+  success: boolean
+): Promise<{ blocked: boolean; remainingAttempts: number }> {
+  if (await storage.isIpBlocked(ip)) {
+    return { blocked: true, remainingAttempts: 0 };
+  }
+
+  await storage.saveLoginAttempt({
+    ip,
+    type,
+    shareId,
+    success,
+    timestamp: new Date().toISOString()
+  });
+
+  if (success) {
+    return { blocked: false, remainingAttempts: MAX_LOGIN_ATTEMPTS };
+  }
+
+  const attempts = await storage.getLoginAttempts(ip);
+  const failedCount = attempts.length;
+
+  if (failedCount >= MAX_LOGIN_ATTEMPTS) {
+    const expiresAt = new Date(Date.now() + BLOCK_DURATION_HOURS * 60 * 60 * 1000).toISOString();
+    await storage.blockIp({
+      ip,
+      reason: type === "admin" ? "admin_login" : "share_access",
+      shareId,
+      blockedAt: new Date().toISOString(),
+      expiresAt
+    });
+    return { blocked: true, remainingAttempts: 0 };
+  }
+
+  return { blocked: false, remainingAttempts: MAX_LOGIN_ATTEMPTS - failedCount };
+}
+
+const SHARE_FOLDERS_DIR = path.join(TEMP_DRIVE_DIR, "shares");
+
+function ensureShareFolderExists(folderId: string): string {
+  const folderPath = path.join(SHARE_FOLDERS_DIR, folderId);
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true });
+  }
+  return folderPath;
+}
+
+function deleteShareFolder(folderId: string): void {
+  const folderPath = path.join(SHARE_FOLDERS_DIR, folderId);
+  if (fs.existsSync(folderPath)) {
+    fs.rmSync(folderPath, { recursive: true, force: true });
+  }
 }
 
 const gifUpload = multer({
@@ -639,6 +709,12 @@ export async function registerRoutes(
 
   app.post("/api/temp-drive/admin/login", async (req, res) => {
     try {
+      const clientIp = getClientIp(req);
+      
+      if (await storage.isIpBlocked(clientIp)) {
+        return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
+      }
+
       const parsed = adminLoginRequestSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid request" });
@@ -648,7 +724,11 @@ export async function registerRoutes(
 
       const isValidPassword = await verifyAdminPassword(password);
       if (!isValidPassword) {
-        return res.status(401).json({ message: "Invalid password" });
+        const { blocked, remainingAttempts } = await checkAndRecordLoginAttempt(clientIp, "admin", null, false);
+        if (blocked) {
+          return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
+        }
+        return res.status(401).json({ message: `Invalid password. ${remainingAttempts} attempts remaining.` });
       }
 
       let admin = await storage.getTempDriveAdmin();
@@ -678,8 +758,14 @@ export async function registerRoutes(
       }
 
       if (!admin.totpSecret || !verifyTotp(admin.totpSecret, otp)) {
-        return res.status(401).json({ message: "Invalid OTP" });
+        const { blocked, remainingAttempts } = await checkAndRecordLoginAttempt(clientIp, "admin", null, false);
+        if (blocked) {
+          return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
+        }
+        return res.status(401).json({ message: `Invalid OTP. ${remainingAttempts} attempts remaining.` });
       }
+
+      await checkAndRecordLoginAttempt(clientIp, "admin", null, true);
 
       const sessionToken = generateSessionToken();
       await storage.saveTempDriveSession({
@@ -757,9 +843,18 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid request" });
       }
 
+      const existingShare = await storage.getTempDriveShare();
+      if (existingShare && existingShare.folderId) {
+        await storage.deleteAllShareFiles(existingShare.id);
+        deleteShareFolder(existingShare.folderId);
+      }
+
       const { password, expiryMinutes } = parsed.data;
       const passwordHash = await hashPassword(password);
       const shareToken = generateShareToken();
+      const folderId = randomUUID();
+      
+      ensureShareFolderExists(folderId);
       
       const expiresAt = expiryMinutes 
         ? new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString()
@@ -769,6 +864,7 @@ export async function registerRoutes(
         id: randomUUID(),
         token: shareToken,
         passwordHash,
+        folderId,
         expiresAt,
         createdAt: new Date().toISOString(),
         active: true
@@ -793,6 +889,12 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Admin authentication required" });
       }
 
+      const share = await storage.getTempDriveShare();
+      if (share && share.folderId) {
+        await storage.deleteAllShareFiles(share.id);
+        deleteShareFolder(share.folderId);
+      }
+
       await storage.deleteTempDriveShare();
       res.json({ success: true });
     } catch (error: any) {
@@ -802,6 +904,12 @@ export async function registerRoutes(
 
   app.post("/api/temp-drive/share/access/:token", async (req, res) => {
     try {
+      const clientIp = getClientIp(req);
+      
+      if (await storage.isIpBlocked(clientIp)) {
+        return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
+      }
+
       const { token } = req.params;
       const parsed = shareAccessRequestSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -814,14 +922,24 @@ export async function registerRoutes(
       }
 
       if (isShareExpired(share.expiresAt)) {
+        if (share.folderId) {
+          await storage.deleteAllShareFiles(share.id);
+          deleteShareFolder(share.folderId);
+        }
         await storage.deleteTempDriveShare();
         return res.status(410).json({ message: "Share has expired" });
       }
 
       const isValidPassword = await verifyPassword(parsed.data.password, share.passwordHash);
       if (!isValidPassword) {
-        return res.status(401).json({ message: "Invalid password" });
+        const { blocked, remainingAttempts } = await checkAndRecordLoginAttempt(clientIp, "share", share.id, false);
+        if (blocked) {
+          return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
+        }
+        return res.status(401).json({ message: `Invalid password. ${remainingAttempts} attempts remaining.` });
       }
+
+      await checkAndRecordLoginAttempt(clientIp, "share", share.id, true);
 
       const sessionToken = generateSessionToken();
       await storage.saveTempDriveSession({
@@ -860,13 +978,22 @@ export async function registerRoutes(
 
   app.get("/api/temp-drive/files", async (req, res) => {
     try {
-      const { valid } = await validateTempDriveSession(req);
-      if (!valid) {
+      const { valid, session, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !session) {
         return res.status(401).json({ message: "Authentication required" });
       }
 
-      const files = await storage.getTempDriveFiles();
-      res.json(files);
+      if (isAdmin) {
+        const files = await storage.getTempDriveFiles();
+        res.json(files);
+      } else {
+        const share = await storage.getTempDriveShare();
+        if (!share) {
+          return res.status(404).json({ message: "Share not found" });
+        }
+        const files = await storage.getShareFiles(share.id);
+        res.json(files);
+      }
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to get files" });
     }
@@ -874,7 +1001,7 @@ export async function registerRoutes(
 
   app.post("/api/temp-drive/files/upload", tempDriveUpload.single("file"), async (req, res) => {
     try {
-      const { valid, session } = await validateTempDriveSession(req);
+      const { valid, session, isAdmin } = await validateTempDriveSession(req);
       if (!valid || !session) {
         if (req.file) fs.unlinkSync(req.file.path);
         return res.status(401).json({ message: "Authentication required" });
@@ -892,27 +1019,60 @@ export async function registerRoutes(
       const fileId = randomUUID();
       const safeExt = path.extname(req.file.originalname).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 10);
       const diskFileName = `${fileId}${safeExt}`;
-      const newPath = path.join(TEMP_DRIVE_DIR, diskFileName);
-      
-      if (!isPathWithinDirectory(newPath, TEMP_DRIVE_DIR)) {
-        fs.unlinkSync(req.file.path);
-        return res.status(400).json({ message: "Invalid file path" });
+
+      if (isAdmin) {
+        const newPath = path.join(TEMP_DRIVE_DIR, diskFileName);
+        
+        if (!isPathWithinDirectory(newPath, TEMP_DRIVE_DIR)) {
+          fs.unlinkSync(req.file.path);
+          return res.status(400).json({ message: "Invalid file path" });
+        }
+        
+        fs.renameSync(req.file.path, newPath);
+
+        const tempDriveFile: TempDriveFile = {
+          id: fileId,
+          fileName: req.file.originalname,
+          diskFileName,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: "admin"
+        };
+
+        await storage.saveTempDriveFile(tempDriveFile);
+        res.json(tempDriveFile);
+      } else {
+        const share = await storage.getTempDriveShare();
+        if (!share || !share.folderId) {
+          fs.unlinkSync(req.file.path);
+          return res.status(404).json({ message: "Share not found" });
+        }
+
+        const folderPath = path.join(SHARE_FOLDERS_DIR, share.folderId);
+        const newPath = path.join(folderPath, diskFileName);
+        
+        if (!isPathWithinDirectory(newPath, folderPath)) {
+          fs.unlinkSync(req.file.path);
+          return res.status(400).json({ message: "Invalid file path" });
+        }
+        
+        ensureShareFolderExists(share.folderId);
+        fs.renameSync(req.file.path, newPath);
+
+        const shareFile: TempDriveShareFile = {
+          id: fileId,
+          shareId: share.id,
+          fileName: req.file.originalname,
+          diskFileName,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          uploadedAt: new Date().toISOString()
+        };
+
+        await storage.saveShareFile(shareFile);
+        res.json(shareFile);
       }
-      
-      fs.renameSync(req.file.path, newPath);
-
-      const tempDriveFile: TempDriveFile = {
-        id: fileId,
-        fileName: req.file.originalname,
-        diskFileName,
-        fileSize: req.file.size,
-        mimeType: req.file.mimetype,
-        uploadedAt: new Date().toISOString(),
-        uploadedBy: session.type
-      };
-
-      await storage.saveTempDriveFile(tempDriveFile);
-      res.json(tempDriveFile);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Upload failed" });
     }
@@ -928,8 +1088,8 @@ export async function registerRoutes(
 
   app.get("/api/temp-drive/files/download/:id", async (req, res) => {
     try {
-      const { valid } = await validateTempDriveSession(req);
-      if (!valid) {
+      const { valid, session, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !session) {
         return res.status(401).json({ message: "Authentication required" });
       }
 
@@ -938,24 +1098,50 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid file identifier" });
       }
 
-      const files = await storage.getTempDriveFiles();
-      const file = files.find(f => f.id === fileId);
-      
-      if (!file) {
-        return res.status(404).json({ message: "File not found" });
-      }
+      if (isAdmin) {
+        const files = await storage.getTempDriveFiles();
+        const file = files.find(f => f.id === fileId);
+        
+        if (!file) {
+          return res.status(404).json({ message: "File not found" });
+        }
 
-      const diskName = getDiskFileName(file);
-      const filePath = path.join(TEMP_DRIVE_DIR, diskName);
-      
-      if (!isPathWithinDirectory(filePath, TEMP_DRIVE_DIR) || !fs.existsSync(filePath)) {
-        return res.status(404).json({ message: "File not found on disk" });
-      }
+        const diskName = getDiskFileName(file);
+        const filePath = path.join(TEMP_DRIVE_DIR, diskName);
+        
+        if (!isPathWithinDirectory(filePath, TEMP_DRIVE_DIR) || !fs.existsSync(filePath)) {
+          return res.status(404).json({ message: "File not found on disk" });
+        }
 
-      const safeFileName = file.fileName.replace(/[^\w\s.-]/gi, '_');
-      res.setHeader("Content-Type", file.mimeType);
-      res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
-      res.sendFile(filePath);
+        const safeFileName = file.fileName.replace(/[^\w\s.-]/gi, '_');
+        res.setHeader("Content-Type", file.mimeType);
+        res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
+        res.sendFile(filePath);
+      } else {
+        const share = await storage.getTempDriveShare();
+        if (!share || !share.folderId) {
+          return res.status(404).json({ message: "Share not found" });
+        }
+
+        const files = await storage.getShareFiles(share.id);
+        const file = files.find(f => f.id === fileId);
+        
+        if (!file) {
+          return res.status(404).json({ message: "File not found" });
+        }
+
+        const folderPath = path.join(SHARE_FOLDERS_DIR, share.folderId);
+        const filePath = path.join(folderPath, file.diskFileName);
+        
+        if (!isPathWithinDirectory(filePath, folderPath) || !fs.existsSync(filePath)) {
+          return res.status(404).json({ message: "File not found on disk" });
+        }
+
+        const safeFileName = file.fileName.replace(/[^\w\s.-]/gi, '_');
+        res.setHeader("Content-Type", file.mimeType);
+        res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
+        res.sendFile(filePath);
+      }
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Download failed" });
     }
@@ -1014,6 +1200,35 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Delete all failed" });
+    }
+  });
+
+  app.get("/api/temp-drive/blocked-ips", async (req, res) => {
+    try {
+      const { valid, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !isAdmin) {
+        return res.status(401).json({ message: "Admin authentication required" });
+      }
+
+      const blockedIps = await storage.getBlockedIps();
+      res.json(blockedIps);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to get blocked IPs" });
+    }
+  });
+
+  app.delete("/api/temp-drive/blocked-ips/:ip", async (req, res) => {
+    try {
+      const { valid, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !isAdmin) {
+        return res.status(401).json({ message: "Admin authentication required" });
+      }
+
+      const ip = decodeURIComponent(req.params.ip);
+      await storage.unblockIp(ip);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to unblock IP" });
     }
   });
 
