@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImageConverter } from "@/components/image-converter";
 import { FileSharing } from "@/components/file-sharing";
-import { Image, Share2 } from "lucide-react";
+import { TempDrive } from "@/components/temp-drive";
+import { Image, Share2, HardDrive } from "lucide-react";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("converter");
@@ -20,14 +21,14 @@ export default function Home() {
         </header>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="w-full grid grid-cols-2 mb-8 h-auto p-1">
+          <TabsList className="w-full grid grid-cols-3 mb-8 h-auto p-1">
             <TabsTrigger 
               value="converter" 
               className="py-4 text-base font-medium gap-2 data-[state=active]:shadow-none"
               data-testid="tab-converter"
             >
               <Image className="w-4 h-4" />
-              Image Converter
+              Converter
             </TabsTrigger>
             <TabsTrigger 
               value="sharing" 
@@ -35,7 +36,15 @@ export default function Home() {
               data-testid="tab-sharing"
             >
               <Share2 className="w-4 h-4" />
-              File Sharing
+              Sharing
+            </TabsTrigger>
+            <TabsTrigger 
+              value="temp-drive" 
+              className="py-4 text-base font-medium gap-2 data-[state=active]:shadow-none"
+              data-testid="tab-temp-drive"
+            >
+              <HardDrive className="w-4 h-4" />
+              Temp Drive
             </TabsTrigger>
           </TabsList>
 
@@ -45,6 +54,10 @@ export default function Home() {
 
           <TabsContent value="sharing" className="mt-0">
             <FileSharing />
+          </TabsContent>
+
+          <TabsContent value="temp-drive" className="mt-0">
+            <TempDrive />
           </TabsContent>
         </Tabs>
       </div>
