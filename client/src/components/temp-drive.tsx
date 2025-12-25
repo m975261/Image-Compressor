@@ -119,7 +119,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     refetchInterval: 30000
   });
 
-  const { data: shares = [], isLoading: sharesLoading, refetch: refetchShares } = useQuery<TempDriveShare[]>({
+  const { data: sharesData, isLoading: sharesLoading, refetch: refetchShares } = useQuery<{ shares: TempDriveShare[], sharingEnabled: boolean }>({
     queryKey: ["/api/temp-drive/shares"],
     enabled: !!sessionToken && isAdmin,
     queryFn: async () => {
@@ -128,6 +128,9 @@ export function TempDrive({ shareToken }: TempDriveProps) {
       return res.json();
     }
   });
+  
+  const shares = sharesData?.shares ?? [];
+  const sharingEnabledFromApi = sharesData?.sharingEnabled ?? true;
 
   const { data: blockedIps = [], isLoading: blockedIpsLoading, refetch: refetchBlockedIps } = useQuery<TempDriveBlockedIp[]>({
     queryKey: ["/api/temp-drive/blocked-ips"],
