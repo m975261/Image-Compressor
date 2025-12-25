@@ -12,6 +12,10 @@ A file utility web application with two main features: animated GIF conversion a
 
 Preferred communication style: Simple, everyday language.
 
+**GitHub Repository**: https://github.com/m975261/Image-Compressor
+- Always push updates to this repo when syncing to GitHub
+- Do NOT use any other repo name for this project
+
 ## System Architecture
 
 ### Frontend Architecture
