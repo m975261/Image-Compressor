@@ -966,6 +966,10 @@ export async function registerRoutes(
       }
 
       if (isShareExpired(share.expiresAt)) {
+        if (share.folderId) {
+          await storage.deleteAllShareFiles(share.id);
+          deleteShareFolder(share.folderId);
+        }
         await storage.deleteTempDriveShare();
         return res.json({ valid: false });
       }
@@ -1249,11 +1253,17 @@ export async function registerRoutes(
   cron.schedule("*/5 * * * *", async () => {
     try {
       await storage.cleanExpiredSessions();
+      await storage.cleanOldLoginAttempts();
+      await storage.cleanExpiredBlocks();
       
       const share = await storage.getTempDriveShare();
       if (share && share.active && isShareExpired(share.expiresAt)) {
+        if (share.folderId) {
+          await storage.deleteAllShareFiles(share.id);
+          deleteShareFolder(share.folderId);
+        }
         await storage.deleteTempDriveShare();
-        console.log("Expired share cleaned up");
+        console.log("Expired share and its folder cleaned up");
       }
     } catch (error) {
       console.error("Error cleaning up temp drive:", error);

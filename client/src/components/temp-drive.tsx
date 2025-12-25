@@ -50,13 +50,20 @@ import {
   FileIcon,
   X
 } from "lucide-react";
-import type { TempDriveFile, StorageStatus } from "@shared/schema";
+import type { TempDriveFile, TempDriveBlockedIp, StorageStatus } from "@shared/schema";
 
 interface TempDriveProps {
   shareToken?: string;
 }
 
+interface TempDriveStatus {
+  totpSetupComplete: boolean;
+  shareActive: boolean;
+  shareExpiresAt: string | null;
+}
+
 type AuthState = "unauthenticated" | "totp_setup" | "otp_required" | "authenticated";
+type AdminTab = "files" | "blocked-ips";
 
 export function TempDrive({ shareToken }: TempDriveProps) {
   const { toast } = useToast();
@@ -68,6 +75,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [totpQrCode, setTotpQrCode] = useState<string | null>(null);
   const [totpSecret, setTotpSecret] = useState<string | null>(null);
+  const [adminTab, setAdminTab] = useState<AdminTab>("files");
   
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [sharePassword, setSharePassword] = useState("");
@@ -77,13 +85,23 @@ export function TempDrive({ shareToken }: TempDriveProps) {
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deleteFileId, setDeleteFileId] = useState<string | null>(null);
 
-  const getAuthHeaders = useCallback(() => {
+  const getAuthHeaders = useCallback((): Record<string, string> => {
     return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {};
   }, [sessionToken]);
 
-  const { data: status } = useQuery({
+  const { data: status } = useQuery<TempDriveStatus>({
     queryKey: ["/api/temp-drive/status"],
     refetchInterval: 30000
+  });
+
+  const { data: blockedIps = [], isLoading: blockedIpsLoading, refetch: refetchBlockedIps } = useQuery<TempDriveBlockedIp[]>({
+    queryKey: ["/api/temp-drive/blocked-ips"],
+    enabled: !!sessionToken && isAdmin,
+    queryFn: async () => {
+      const res = await fetch("/api/temp-drive/blocked-ips", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch blocked IPs");
+      return res.json();
+    }
   });
 
   const { data: storageInfo } = useQuery<StorageStatus>({
@@ -317,6 +335,24 @@ export function TempDrive({ shareToken }: TempDriveProps) {
       refetchFiles();
       setDeleteAllDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/temp-drive/storage"] });
+    }
+  });
+
+  const unblockIpMutation = useMutation({
+    mutationFn: async (ip: string) => {
+      const res = await fetch(`/api/temp-drive/blocked-ips/${encodeURIComponent(ip)}`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) throw new Error("Unblock failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "IP unblocked" });
+      refetchBlockedIps();
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message, variant: "destructive" });
     }
   });
 
@@ -584,87 +620,169 @@ export function TempDrive({ shareToken }: TempDriveProps) {
         </Card>
       )}
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button asChild data-testid="button-upload-file">
-          <label className="cursor-pointer">
-            <Upload className="w-4 h-4 mr-2" />
-            Upload File
-            <input
-              type="file"
-              className="hidden"
-              onChange={handleFileUpload}
-              disabled={uploadMutation.isPending}
-            />
-          </label>
-        </Button>
-
-        {isAdmin && files.length > 0 && (
+      {isAdmin && (
+        <div className="flex gap-2 border-b">
           <Button
-            variant="destructive"
-            onClick={() => setDeleteAllDialogOpen(true)}
-            data-testid="button-delete-all"
+            variant="ghost"
+            className={`rounded-none border-b-2 ${adminTab === "files" ? "border-primary" : "border-transparent"}`}
+            onClick={() => setAdminTab("files")}
+            data-testid="tab-files"
           >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete All
+            <FileIcon className="w-4 h-4 mr-2" />
+            Files
           </Button>
-        )}
-      </div>
-
-      {filesLoading ? (
-        <div className="flex justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin" />
+          <Button
+            variant="ghost"
+            className={`rounded-none border-b-2 ${adminTab === "blocked-ips" ? "border-primary" : "border-transparent"}`}
+            onClick={() => setAdminTab("blocked-ips")}
+            data-testid="tab-blocked-ips"
+          >
+            <Shield className="w-4 h-4 mr-2" />
+            Blocked IPs
+            {blockedIps.length > 0 && (
+              <Badge variant="destructive" className="ml-2 text-xs">
+                {blockedIps.length}
+              </Badge>
+            )}
+          </Button>
         </div>
-      ) : files.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            <FileIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>No files uploaded yet</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="divide-y">
-              {files.map((file) => (
-                <div 
-                  key={file.id} 
-                  className="flex items-center justify-between gap-4 p-4"
-                  data-testid={`file-row-${file.id}`}
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <FileIcon className="w-5 h-5 flex-shrink-0 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{file.fileName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatBytes(file.fileSize)} | {formatDate(file.uploadedAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDownload(file)}
-                      data-testid={`button-download-${file.id}`}
-                    >
-                      <Download className="w-4 h-4" />
-                    </Button>
-                    {isAdmin && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteFileId(file.id)}
-                        data-testid={`button-delete-${file.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
+      )}
+
+      {(!isAdmin || adminTab === "files") && (
+        <>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button asChild data-testid="button-upload-file">
+              <label className="cursor-pointer">
+                <Upload className="w-4 h-4 mr-2" />
+                Upload File
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={uploadMutation.isPending}
+                />
+              </label>
+            </Button>
+
+            {isAdmin && files.length > 0 && (
+              <Button
+                variant="destructive"
+                onClick={() => setDeleteAllDialogOpen(true)}
+                data-testid="button-delete-all"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete All
+              </Button>
+            )}
+          </div>
+
+          {filesLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin" />
             </div>
-          </CardContent>
-        </Card>
+          ) : files.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <FileIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No files uploaded yet</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {files.map((file) => (
+                    <div 
+                      key={file.id} 
+                      className="flex items-center justify-between gap-4 p-4"
+                      data-testid={`file-row-${file.id}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <FileIcon className="w-5 h-5 flex-shrink-0 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{file.fileName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatBytes(file.fileSize)} | {formatDate(file.uploadedAt)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDownload(file)}
+                          data-testid={`button-download-${file.id}`}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteFileId(file.id)}
+                            data-testid={`button-delete-${file.id}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {isAdmin && adminTab === "blocked-ips" && (
+        <>
+          {blockedIpsLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin" />
+            </div>
+          ) : blockedIps.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <Shield className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No blocked IPs</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {blockedIps.map((blocked) => (
+                    <div 
+                      key={blocked.ip} 
+                      className="flex items-center justify-between gap-4 p-4"
+                      data-testid={`blocked-ip-row-${blocked.ip}`}
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium font-mono">{blocked.ip}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Blocked: {formatDate(blocked.blockedAt)} | Expires: {formatDate(blocked.expiresAt)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Reason: {blocked.reason === "admin_login" ? "Failed admin login" : "Failed share access"}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => unblockIpMutation.mutate(blocked.ip)}
+                        disabled={unblockIpMutation.isPending}
+                        data-testid={`button-unblock-${blocked.ip}`}
+                      >
+                        Unblock
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
