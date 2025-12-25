@@ -68,6 +68,7 @@ export type TempDriveAdmin = z.infer<typeof tempDriveAdminSchema>;
 export const tempDriveFileSchema = z.object({
   id: z.string(),
   fileName: z.string(),
+  diskFileName: z.string().optional(),
   fileSize: z.number(),
   mimeType: z.string(),
   uploadedAt: z.string(),

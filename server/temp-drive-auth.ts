@@ -7,9 +7,6 @@ const SALT_ROUNDS = 12;
 const SESSION_DURATION_HOURS = 4;
 const APP_NAME = "FileTools TempDrive";
 
-const ADMIN_PASSWORD_HASH = process.env.TEMP_DRIVE_ADMIN_HASH || 
-  "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4nQIALQJpqHvCmOe";
-
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
 }
@@ -19,7 +16,12 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export async function verifyAdminPassword(password: string): Promise<boolean> {
-  return bcrypt.compare(password, ADMIN_PASSWORD_HASH);
+  const adminHash = process.env.TEMP_DRIVE_ADMIN_HASH;
+  if (!adminHash) {
+    console.error("CRITICAL: TEMP_DRIVE_ADMIN_HASH environment variable is not set. Admin login disabled.");
+    return false;
+  }
+  return bcrypt.compare(password, adminHash);
 }
 
 export function generateTotpSecret(): string {

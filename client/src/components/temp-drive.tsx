@@ -89,7 +89,12 @@ export function TempDrive({ shareToken }: TempDriveProps) {
   const { data: storageInfo } = useQuery<StorageStatus>({
     queryKey: ["/api/temp-drive/storage"],
     enabled: !!sessionToken,
-    refetchInterval: 60000
+    refetchInterval: 60000,
+    queryFn: async () => {
+      const res = await fetch("/api/temp-drive/storage", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch storage info");
+      return res.json();
+    }
   });
 
   const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<TempDriveFile[]>({
@@ -121,7 +126,14 @@ export function TempDrive({ shareToken }: TempDriveProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data)
       });
-      return res.json();
+      const json = await res.json();
+      if (!res.ok) {
+        if (json.requiresOtp) {
+          return { requiresOtp: true };
+        }
+        throw new Error(json.message || "Login failed");
+      }
+      return json;
     },
     onSuccess: (data) => {
       if (data.requiresTotpSetup) {
@@ -136,12 +148,10 @@ export function TempDrive({ shareToken }: TempDriveProps) {
         setAuthState("authenticated");
         setPassword("");
         setOtp("");
-      } else if (data.message) {
-        toast({ title: data.message, variant: "destructive" });
       }
     },
-    onError: () => {
-      toast({ title: "Login failed", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: error.message, variant: "destructive" });
     }
   });
 

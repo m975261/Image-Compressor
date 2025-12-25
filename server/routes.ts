@@ -597,6 +597,11 @@ export async function registerRoutes(
       return { valid: false, session: null, isAdmin: false };
     }
 
+    if (new Date(session.expiresAt) <= new Date()) {
+      await storage.deleteTempDriveSession(token);
+      return { valid: false, session: null, isAdmin: false };
+    }
+
     if (session.type === "share") {
       const share = await storage.getTempDriveShare();
       if (!share || !share.active || isShareExpired(share.expiresAt)) {
@@ -885,13 +890,21 @@ export async function registerRoutes(
       }
 
       const fileId = randomUUID();
-      const ext = path.extname(req.file.originalname).replace(/[^a-zA-Z0-9.]/g, '') || '';
-      const newPath = path.join(TEMP_DRIVE_DIR, fileId + ext);
+      const safeExt = path.extname(req.file.originalname).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 10);
+      const diskFileName = `${fileId}${safeExt}`;
+      const newPath = path.join(TEMP_DRIVE_DIR, diskFileName);
+      
+      if (!isPathWithinDirectory(newPath, TEMP_DRIVE_DIR)) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({ message: "Invalid file path" });
+      }
+      
       fs.renameSync(req.file.path, newPath);
 
       const tempDriveFile: TempDriveFile = {
         id: fileId,
         fileName: req.file.originalname,
+        diskFileName,
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
         uploadedAt: new Date().toISOString(),
@@ -904,6 +917,14 @@ export async function registerRoutes(
       res.status(500).json({ message: error.message || "Upload failed" });
     }
   });
+
+  function getDiskFileName(file: TempDriveFile): string {
+    if (file.diskFileName) {
+      return file.diskFileName;
+    }
+    const safeExt = path.extname(file.fileName).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 10);
+    return `${file.id}${safeExt}`;
+  }
 
   app.get("/api/temp-drive/files/download/:id", async (req, res) => {
     try {
@@ -924,15 +945,16 @@ export async function registerRoutes(
         return res.status(404).json({ message: "File not found" });
       }
 
-      const ext = path.extname(file.fileName).replace(/[^a-zA-Z0-9.]/g, '') || '';
-      const filePath = path.join(TEMP_DRIVE_DIR, fileId + ext);
+      const diskName = getDiskFileName(file);
+      const filePath = path.join(TEMP_DRIVE_DIR, diskName);
       
       if (!isPathWithinDirectory(filePath, TEMP_DRIVE_DIR) || !fs.existsSync(filePath)) {
         return res.status(404).json({ message: "File not found on disk" });
       }
 
+      const safeFileName = file.fileName.replace(/[^\w\s.-]/gi, '_');
       res.setHeader("Content-Type", file.mimeType);
-      res.setHeader("Content-Disposition", `attachment; filename="${file.fileName}"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
       res.sendFile(filePath);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Download failed" });
@@ -958,8 +980,8 @@ export async function registerRoutes(
         return res.status(404).json({ message: "File not found" });
       }
 
-      const ext = path.extname(file.fileName).replace(/[^a-zA-Z0-9.]/g, '') || '';
-      const filePath = path.join(TEMP_DRIVE_DIR, fileId + ext);
+      const diskName = getDiskFileName(file);
+      const filePath = path.join(TEMP_DRIVE_DIR, diskName);
       
       if (fs.existsSync(filePath) && isPathWithinDirectory(filePath, TEMP_DRIVE_DIR)) {
         fs.unlinkSync(filePath);
@@ -981,8 +1003,8 @@ export async function registerRoutes(
 
       const files = await storage.getTempDriveFiles();
       for (const file of files) {
-        const ext = path.extname(file.fileName).replace(/[^a-zA-Z0-9.]/g, '') || '';
-        const filePath = path.join(TEMP_DRIVE_DIR, file.id + ext);
+        const diskName = getDiskFileName(file);
+        const filePath = path.join(TEMP_DRIVE_DIR, diskName);
         if (fs.existsSync(filePath) && isPathWithinDirectory(filePath, TEMP_DRIVE_DIR)) {
           fs.unlinkSync(filePath);
         }
