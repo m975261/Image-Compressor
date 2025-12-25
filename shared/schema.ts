@@ -55,3 +55,66 @@ export const insertUserSchema = z.object({
 });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = { id: string; username: string; password: string };
+
+// Temp Drive schemas
+export const tempDriveAdminSchema = z.object({
+  passwordHash: z.string(),
+  totpSecret: z.string().nullable(),
+  totpSetupComplete: z.boolean(),
+  createdAt: z.string(),
+});
+export type TempDriveAdmin = z.infer<typeof tempDriveAdminSchema>;
+
+export const tempDriveFileSchema = z.object({
+  id: z.string(),
+  fileName: z.string(),
+  fileSize: z.number(),
+  mimeType: z.string(),
+  uploadedAt: z.string(),
+  uploadedBy: z.enum(["admin", "share"]),
+});
+export type TempDriveFile = z.infer<typeof tempDriveFileSchema>;
+
+export const tempDriveShareSchema = z.object({
+  id: z.string(),
+  token: z.string(),
+  passwordHash: z.string(),
+  expiresAt: z.string().nullable(),
+  createdAt: z.string(),
+  active: z.boolean(),
+});
+export type TempDriveShare = z.infer<typeof tempDriveShareSchema>;
+
+export const tempDriveSessionSchema = z.object({
+  token: z.string(),
+  type: z.enum(["admin", "share"]),
+  shareId: z.string().nullable(),
+  expiresAt: z.string(),
+  createdAt: z.string(),
+});
+export type TempDriveSession = z.infer<typeof tempDriveSessionSchema>;
+
+export const adminLoginRequestSchema = z.object({
+  password: z.string().min(1, "Password is required"),
+  otp: z.string().optional(),
+});
+export type AdminLoginRequest = z.infer<typeof adminLoginRequestSchema>;
+
+export const shareCreateRequestSchema = z.object({
+  password: z.string().min(1, "Share password is required"),
+  expiryMinutes: z.number().min(1).nullable(),
+});
+export type ShareCreateRequest = z.infer<typeof shareCreateRequestSchema>;
+
+export const shareAccessRequestSchema = z.object({
+  password: z.string().min(1, "Password is required"),
+});
+export type ShareAccessRequest = z.infer<typeof shareAccessRequestSchema>;
+
+export const storageStatusSchema = z.object({
+  usedBytes: z.number(),
+  totalBytes: z.number(),
+  usedPercentage: z.number(),
+  warning: z.boolean(),
+});
+export type StorageStatus = z.infer<typeof storageStatusSchema>;

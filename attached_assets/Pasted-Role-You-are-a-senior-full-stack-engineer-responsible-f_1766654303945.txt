@@ -1,0 +1,282 @@
+Role
+You are a senior full-stack engineer responsible for implementing a secure, encrypted, two-factor-protected temporary cloud drive, with optional time-limited sharing, inside an existing web application.
+
+🎯 Feature Overview
+
+Add a third tab in the application UI called:
+
+Temp Drive
+
+This tab provides a secure, encrypted, password-protected temporary file storage area, with an optional controlled sharing mechanism.
+
+🔐 Authentication & Security (CRITICAL)
+1️⃣ Primary Password (Admin Access)
+
+When Temp Drive tab is clicked:
+
+Prompt for password
+
+Password value (hardcoded logically, never in plaintext):
+
+Trilli0n$@P9crkmm6@Milli0n$
+
+
+Password must be:
+
+Stored hashed + salted (bcrypt / argon2 / scrypt)
+
+Verified server-side only
+
+Never exposed to frontend code
+
+2️⃣ Two-Factor Authentication (Google Authenticator)
+First successful admin login only:
+
+Force Google Authenticator setup
+
+Generate TOTP secret
+
+Show QR code
+
+Require OTP validation
+
+Store TOTP secret encrypted at rest
+
+Every future admin access:
+
+Password prompt
+
+OTP prompt
+
+Server-side validation
+
+Access granted only if both succeed
+
+📂 Temp Drive Core Functionality (Admin)
+
+Once authenticated:
+
+UI Elements
+
+File table:
+
+File name
+
+Size
+
+Upload date
+
+Actions (Download / Delete)
+
+Upload button
+
+Delete All button (with confirmation)
+
+Share Drive button
+
+File Capabilities (Admin)
+
+Upload any file type
+
+Download any file
+
+Delete individual files
+
+Delete all files at once
+
+🔁 Share Drive Feature (NEW — IMPORTANT)
+🔓 Who Can Enable Sharing
+
+ONLY admin
+
+Requires:
+
+Admin password
+
+Valid OTP
+
+No other users can enable or disable sharing
+
+📤 Share Drive Button Behavior
+
+When Admin clicks “Share Drive”:
+
+Prompt for a temporary share password
+
+Prompt for expiry duration:
+
+Default: 5 minutes
+
+Options:
+
+Custom time (minutes / hours)
+
+Forever (no expiry)
+
+On clicking Apply:
+
+Generate a unique, secure share link
+
+Link is:
+
+Single-purpose
+
+Bound to the configured password
+
+Time-limited
+
+Display:
+
+Share URL
+
+Copy icon (one-click copy)
+
+🔗 Share Link Access Rules (Non-Admin Users)
+
+When someone opens the shared link:
+
+They are prompted only for the share password
+
+No OTP required
+
+If password is correct:
+
+Access granted to Temp Drive
+
+If incorrect:
+
+Access denied
+
+🔒 Permissions for Shared Users
+
+Shared users can:
+
+✅ Upload files
+
+✅ Download files
+
+❌ Delete files
+
+❌ Delete all
+
+❌ Enable or disable sharing
+
+❌ See admin controls
+
+This must be strictly enforced server-side.
+
+⏱️ Expiry Behavior
+
+Default expiry: 5 minutes
+
+Admin may choose:
+
+Custom expiry time
+
+Forever
+
+When expiry occurs:
+
+Share link becomes invalid
+
+Share access is automatically disabled
+
+System returns to default (non-shared) state
+
+Admin can manually disable sharing at any time
+
+🛡️ Storage & Security Rules
+
+Files stored outside public directories
+
+No direct URL access
+
+Session-based access
+
+Share access uses:
+
+Tokenized URL
+
+Hashed share password
+
+Expiry enforcement
+
+Sanitize filenames
+
+Prevent directory traversal
+
+No execution of uploaded files
+
+⚙️ Technical Expectations
+
+Server-side auth for:
+
+Admin
+
+Shared access
+
+Encrypted storage for:
+
+Admin password hash
+
+TOTP secret
+
+Share password hash
+
+Clean separation:
+
+Auth logic
+
+Share logic
+
+File logic
+
+UI logic
+
+Stateless share URLs with expiry validation
+
+🚫 Explicitly Forbidden
+
+Plaintext passwords (admin or share)
+
+Client-side authentication logic
+
+Exposing secrets in frontend
+
+Allowing shared users to delete files
+
+Permanent share without admin consent
+
+🧪 Acceptance Criteria (How This Will Be Tested)
+
+✅ Admin must authenticate with password + OTP
+✅ Google Authenticator setup required on first login
+✅ Files upload, list, download, delete correctly (admin)
+✅ Share Drive can only be enabled by admin
+✅ Share password required for shared users
+✅ Shared users can upload & download only
+✅ Delete actions hidden & blocked for shared users
+✅ Share link expires correctly (default 5 min)
+✅ Admin can disable sharing manually
+✅ System returns to non-shared state after expiry
+✅ No secrets visible in frontend
+
+📦 Deliverables
+
+Temp Drive tab UI
+
+Secure admin auth (password + OTP)
+
+Encrypted file storage
+
+Upload / download / delete logic
+
+Share Drive logic with expiry
+
+Permissions enforcement
+
+Brief explanation of security design
+
+🔁 Summary (One Line)
+
+Implement a secure, encrypted Temp Drive with admin-only password + OTP access and optional time-limited password-protected sharing, allowing upload/download for shared users and full control for admin only.
