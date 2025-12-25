@@ -307,7 +307,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
   });
 
   const createShareMutation = useMutation({
-    mutationFn: async (data: { label: string; password?: string; expiryMinutes: number | null }) => {
+    mutationFn: async (data: { label: string; password: string | null; expiryMinutes: number | null }) => {
       const res = await fetch("/api/temp-drive/shares", {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
@@ -517,7 +517,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     const expiryMinutes = shareExpiry === "forever" ? null : parseInt(shareExpiry);
     createShareMutation.mutate({ 
       label: shareLabel || "Untitled Share", 
-      password: sharePassword || undefined, 
+      password: sharePassword || null, 
       expiryMinutes 
     });
   };

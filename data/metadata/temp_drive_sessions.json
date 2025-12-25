@@ -19,5 +19,12 @@
     "shareId": null,
     "expiresAt": "2025-12-25T16:51:20.055Z",
     "createdAt": "2025-12-25T12:51:20.055Z"
+  },
+  "cfc01c9b23f11b443787ec9397d4d4b805c54cf1698c3dedd30eb684879afa72": {
+    "token": "cfc01c9b23f11b443787ec9397d4d4b805c54cf1698c3dedd30eb684879afa72",
+    "type": "admin",
+    "shareId": null,
+    "expiresAt": "2025-12-25T17:02:47.054Z",
+    "createdAt": "2025-12-25T13:02:47.054Z"
   }
 }
