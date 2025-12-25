@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import { 
   Dialog, 
   DialogContent, 
@@ -48,9 +49,14 @@ import {
   EyeOff,
   Loader2,
   FileIcon,
-  X
+  Plus,
+  Pencil,
+  FolderOpen,
+  ExternalLink,
+  Power,
+  PowerOff
 } from "lucide-react";
-import type { TempDriveFile, TempDriveBlockedIp, StorageStatus } from "@shared/schema";
+import type { TempDriveFile, TempDriveBlockedIp, StorageStatus, TempDriveShare, TempDriveShareFile } from "@shared/schema";
 
 interface TempDriveProps {
   shareToken?: string;
@@ -58,12 +64,23 @@ interface TempDriveProps {
 
 interface TempDriveStatus {
   totpSetupComplete: boolean;
-  shareActive: boolean;
-  shareExpiresAt: string | null;
+  sharingEnabled: boolean;
+  activeShareCount: number;
+  totalShareCount: number;
+}
+
+interface ShareQuota {
+  usedBytes: number;
+  totalBytes: number;
+}
+
+interface FilesResponse {
+  files: TempDriveShareFile[];
+  quota: ShareQuota;
 }
 
 type AuthState = "unauthenticated" | "totp_setup" | "otp_required" | "authenticated";
-type AdminTab = "files" | "blocked-ips";
+type AdminTab = "files" | "shares" | "blocked-ips";
 
 export function TempDrive({ shareToken }: TempDriveProps) {
   const { toast } = useToast();
@@ -78,20 +95,38 @@ export function TempDrive({ shareToken }: TempDriveProps) {
   const [adminTab, setAdminTab] = useState<AdminTab>("files");
   
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [editingShare, setEditingShare] = useState<TempDriveShare | null>(null);
+  const [shareLabel, setShareLabel] = useState("");
   const [sharePassword, setSharePassword] = useState("");
-  const [shareExpiry, setShareExpiry] = useState("5");
+  const [shareExpiry, setShareExpiry] = useState("60");
   const [generatedShareUrl, setGeneratedShareUrl] = useState<string | null>(null);
+  
+  const [selectedShareId, setSelectedShareId] = useState<string | null>(null);
+  const [viewingShareFiles, setViewingShareFiles] = useState(false);
   
   const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [deleteFileId, setDeleteFileId] = useState<string | null>(null);
+  const [deleteShareId, setDeleteShareId] = useState<string | null>(null);
+
+  const [shareQuota, setShareQuota] = useState<ShareQuota | null>(null);
 
   const getAuthHeaders = useCallback((): Record<string, string> => {
     return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {};
   }, [sessionToken]);
 
-  const { data: status } = useQuery<TempDriveStatus>({
+  const { data: status, refetch: refetchStatus } = useQuery<TempDriveStatus>({
     queryKey: ["/api/temp-drive/status"],
     refetchInterval: 30000
+  });
+
+  const { data: shares = [], isLoading: sharesLoading, refetch: refetchShares } = useQuery<TempDriveShare[]>({
+    queryKey: ["/api/temp-drive/shares"],
+    enabled: !!sessionToken && isAdmin,
+    queryFn: async () => {
+      const res = await fetch("/api/temp-drive/shares", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch shares");
+      return res.json();
+    }
   });
 
   const { data: blockedIps = [], isLoading: blockedIpsLoading, refetch: refetchBlockedIps } = useQuery<TempDriveBlockedIp[]>({
@@ -115,15 +150,37 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     }
   });
 
-  const { data: files = [], isLoading: filesLoading, refetch: refetchFiles } = useQuery<TempDriveFile[]>({
+  const { data: adminFiles = [], isLoading: adminFilesLoading, refetch: refetchAdminFiles } = useQuery<TempDriveFile[]>({
     queryKey: ["/api/temp-drive/files"],
-    enabled: !!sessionToken,
+    enabled: !!sessionToken && isAdmin && !viewingShareFiles,
     queryFn: async () => {
       const res = await fetch("/api/temp-drive/files", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch files");
       return res.json();
     }
   });
+
+  const { data: shareFilesData, isLoading: shareFilesLoading, refetch: refetchShareFiles } = useQuery<FilesResponse>({
+    queryKey: ["/api/temp-drive/files", selectedShareId],
+    enabled: !!sessionToken && (viewingShareFiles || !isAdmin),
+    queryFn: async () => {
+      const url = isAdmin && selectedShareId 
+        ? `/api/temp-drive/files?shareId=${selectedShareId}`
+        : "/api/temp-drive/files";
+      const res = await fetch(url, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to fetch files");
+      return res.json();
+    }
+  });
+
+  useEffect(() => {
+    if (shareFilesData?.quota) {
+      setShareQuota(shareFilesData.quota);
+    }
+  }, [shareFilesData]);
+
+  const currentFiles = viewingShareFiles || !isAdmin ? shareFilesData?.files || [] : adminFiles;
+  const filesLoading = viewingShareFiles || !isAdmin ? shareFilesLoading : adminFilesLoading;
 
   useEffect(() => {
     if (shareToken) {
@@ -240,13 +297,15 @@ export function TempDrive({ shareToken }: TempDriveProps) {
       setSessionToken(null);
       setIsAdmin(false);
       setAuthState("unauthenticated");
+      setViewingShareFiles(false);
+      setSelectedShareId(null);
       queryClient.invalidateQueries({ queryKey: ["/api/temp-drive"] });
     }
   });
 
   const createShareMutation = useMutation({
-    mutationFn: async (data: { password: string; expiryMinutes: number | null }) => {
-      const res = await fetch("/api/temp-drive/share/create", {
+    mutationFn: async (data: { label: string; password?: string; expiryMinutes: number | null }) => {
+      const res = await fetch("/api/temp-drive/shares", {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify(data)
@@ -255,27 +314,74 @@ export function TempDrive({ shareToken }: TempDriveProps) {
       return res.json();
     },
     onSuccess: (data) => {
-      const fullUrl = `${window.location.origin}${data.shareUrl}`;
+      const fullUrl = `${window.location.origin}/temp-drive/share/${data.token}`;
       setGeneratedShareUrl(fullUrl);
-      queryClient.invalidateQueries({ queryKey: ["/api/temp-drive/status"] });
+      refetchShares();
+      refetchStatus();
     },
     onError: () => {
       toast({ title: "Failed to create share link", variant: "destructive" });
     }
   });
 
-  const disableShareMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/temp-drive/share/disable", {
-        method: "POST",
-        headers: getAuthHeaders()
+  const updateShareMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<TempDriveShare> }) => {
+      const res = await fetch(`/api/temp-drive/shares/${id}`, {
+        method: "PATCH",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(data)
       });
-      if (!res.ok) throw new Error("Failed to disable share");
+      if (!res.ok) throw new Error("Failed to update share");
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Share disabled" });
-      queryClient.invalidateQueries({ queryKey: ["/api/temp-drive/status"] });
+      toast({ title: "Share updated" });
+      refetchShares();
+      refetchStatus();
+      setShareDialogOpen(false);
+      setEditingShare(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to update share", variant: "destructive" });
+    }
+  });
+
+  const deleteShareMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/temp-drive/shares/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) throw new Error("Failed to delete share");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Share deleted" });
+      refetchShares();
+      refetchStatus();
+      setDeleteShareId(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete share", variant: "destructive" });
+    }
+  });
+
+  const toggleGlobalSharingMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const res = await fetch("/api/temp-drive/global-sharing", {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled })
+      });
+      if (!res.ok) throw new Error("Failed to toggle sharing");
+      return res.json();
+    },
+    onSuccess: (_, enabled) => {
+      toast({ title: enabled ? "Sharing enabled" : "Sharing disabled" });
+      refetchStatus();
+    },
+    onError: () => {
+      toast({ title: "Failed to toggle sharing", variant: "destructive" });
     }
   });
 
@@ -296,7 +402,11 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     },
     onSuccess: () => {
       toast({ title: "File uploaded" });
-      refetchFiles();
+      if (viewingShareFiles || !isAdmin) {
+        refetchShareFiles();
+      } else {
+        refetchAdminFiles();
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/temp-drive/storage"] });
     },
     onError: (error: Error) => {
@@ -306,7 +416,10 @@ export function TempDrive({ shareToken }: TempDriveProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async (fileId: string) => {
-      const res = await fetch(`/api/temp-drive/files/${fileId}`, {
+      const url = viewingShareFiles && selectedShareId 
+        ? `/api/temp-drive/files/${fileId}?shareId=${selectedShareId}`
+        : `/api/temp-drive/files/${fileId}`;
+      const res = await fetch(url, {
         method: "DELETE",
         headers: getAuthHeaders()
       });
@@ -315,7 +428,11 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     },
     onSuccess: () => {
       toast({ title: "File deleted" });
-      refetchFiles();
+      if (viewingShareFiles) {
+        refetchShareFiles();
+      } else {
+        refetchAdminFiles();
+      }
       setDeleteFileId(null);
       queryClient.invalidateQueries({ queryKey: ["/api/temp-drive/storage"] });
     }
@@ -332,7 +449,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     },
     onSuccess: () => {
       toast({ title: "All files deleted" });
-      refetchFiles();
+      refetchAdminFiles();
       setDeleteAllDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/temp-drive/storage"] });
     }
@@ -378,7 +495,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     }
   };
 
-  const handleDownload = async (file: TempDriveFile) => {
+  const handleDownload = async (file: TempDriveFile | TempDriveShareFile) => {
     const res = await fetch(`/api/temp-drive/files/download/${file.id}`, {
       headers: getAuthHeaders()
     });
@@ -395,12 +512,56 @@ export function TempDrive({ shareToken }: TempDriveProps) {
 
   const handleCreateShare = () => {
     const expiryMinutes = shareExpiry === "forever" ? null : parseInt(shareExpiry);
-    createShareMutation.mutate({ password: sharePassword, expiryMinutes });
+    createShareMutation.mutate({ 
+      label: shareLabel || "Untitled Share", 
+      password: sharePassword || undefined, 
+      expiryMinutes 
+    });
   };
 
-  const copyShareUrl = () => {
-    if (generatedShareUrl) {
-      navigator.clipboard.writeText(generatedShareUrl);
+  const handleUpdateShare = () => {
+    if (!editingShare) return;
+    updateShareMutation.mutate({
+      id: editingShare.id,
+      data: {
+        label: shareLabel,
+        active: editingShare.active
+      }
+    });
+  };
+
+  const openCreateShareDialog = () => {
+    setEditingShare(null);
+    setShareLabel("");
+    setSharePassword("");
+    setShareExpiry("60");
+    setGeneratedShareUrl(null);
+    setShareDialogOpen(true);
+  };
+
+  const openEditShareDialog = (share: TempDriveShare) => {
+    setEditingShare(share);
+    setShareLabel(share.label);
+    setSharePassword("");
+    setGeneratedShareUrl(null);
+    setShareDialogOpen(true);
+  };
+
+  const openShareFiles = (share: TempDriveShare) => {
+    setSelectedShareId(share.id);
+    setViewingShareFiles(true);
+    setAdminTab("files");
+  };
+
+  const backToAdminFiles = () => {
+    setViewingShareFiles(false);
+    setSelectedShareId(null);
+  };
+
+  const copyShareUrl = (url?: string) => {
+    const urlToCopy = url || generatedShareUrl;
+    if (urlToCopy) {
+      navigator.clipboard.writeText(urlToCopy);
       toast({ title: "Share URL copied" });
     }
   };
@@ -417,6 +578,21 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     return new Date(dateStr).toLocaleString();
   };
 
+  const isShareExpired = (expiresAt: string | null) => {
+    if (!expiresAt) return false;
+    return new Date(expiresAt) <= new Date();
+  };
+
+  const getTimeRemaining = (expiresAt: string | null) => {
+    if (!expiresAt) return "Never";
+    const diff = new Date(expiresAt).getTime() - Date.now();
+    if (diff <= 0) return "Expired";
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
   if (authState === "unauthenticated" || authState === "otp_required") {
     return (
       <Card className="max-w-md mx-auto">
@@ -429,7 +605,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
           </CardTitle>
           <CardDescription>
             {shareToken 
-              ? "Enter the password to access shared files" 
+              ? "Enter the password to access shared files (or leave blank if none required)" 
               : authState === "otp_required" 
                 ? "Enter your Google Authenticator code" 
                 : "Enter admin password to access Temp Drive"}
@@ -445,7 +621,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
+                  placeholder={shareToken ? "Enter password (optional)" : "Enter password"}
                   data-testid="input-temp-drive-password"
                   onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                 />
@@ -547,43 +723,33 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     );
   }
 
+  const selectedShare = shares.find(s => s.id === selectedShareId);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2">
           <HardDrive className="w-5 h-5" />
-          <h2 className="text-lg font-semibold">Temp Drive</h2>
+          <h2 className="text-lg font-semibold">
+            {viewingShareFiles && selectedShare 
+              ? `Share: ${selectedShare.label}` 
+              : "Temp Drive"}
+          </h2>
           <Badge variant={isAdmin ? "default" : "secondary"} className="text-xs">
             {isAdmin ? "Admin" : "Shared Access"}
           </Badge>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {isAdmin && (
-            <>
-              {status?.shareActive ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => disableShareMutation.mutate()}
-                  disabled={disableShareMutation.isPending}
-                  data-testid="button-disable-share"
-                >
-                  <X className="w-4 h-4 mr-1" />
-                  Disable Share
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShareDialogOpen(true)}
-                  data-testid="button-share-drive"
-                >
-                  <Share2 className="w-4 h-4 mr-1" />
-                  Share Drive
-                </Button>
-              )}
-            </>
+          {viewingShareFiles && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={backToAdminFiles}
+              data-testid="button-back-to-admin"
+            >
+              Back to Admin Files
+            </Button>
           )}
           <Button
             variant="ghost"
@@ -597,11 +763,11 @@ export function TempDrive({ shareToken }: TempDriveProps) {
         </div>
       </div>
 
-      {storageInfo && (
+      {storageInfo && isAdmin && !viewingShareFiles && (
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center justify-between gap-4 mb-2">
-              <span className="text-sm text-muted-foreground">Storage Usage</span>
+              <span className="text-sm text-muted-foreground">System Storage Usage</span>
               <span className="text-sm font-medium">
                 {formatBytes(storageInfo.usedBytes)} / {formatBytes(storageInfo.totalBytes)}
               </span>
@@ -620,7 +786,24 @@ export function TempDrive({ shareToken }: TempDriveProps) {
         </Card>
       )}
 
-      {isAdmin && (
+      {shareQuota && (!isAdmin || viewingShareFiles) && (
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between gap-4 mb-2">
+              <span className="text-sm text-muted-foreground">Share Storage Quota</span>
+              <span className="text-sm font-medium">
+                {formatBytes(shareQuota.usedBytes)} / {formatBytes(shareQuota.totalBytes)}
+              </span>
+            </div>
+            <Progress 
+              value={(shareQuota.usedBytes / shareQuota.totalBytes) * 100} 
+              className={shareQuota.usedBytes > shareQuota.totalBytes * 0.9 ? "bg-destructive/20" : ""}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && !viewingShareFiles && (
         <div className="flex gap-2 border-b">
           <Button
             variant="ghost"
@@ -629,7 +812,21 @@ export function TempDrive({ shareToken }: TempDriveProps) {
             data-testid="tab-files"
           >
             <FileIcon className="w-4 h-4 mr-2" />
-            Files
+            Admin Files
+          </Button>
+          <Button
+            variant="ghost"
+            className={`rounded-none border-b-2 ${adminTab === "shares" ? "border-primary" : "border-transparent"}`}
+            onClick={() => setAdminTab("shares")}
+            data-testid="tab-shares"
+          >
+            <Share2 className="w-4 h-4 mr-2" />
+            Shares
+            {shares.length > 0 && (
+              <Badge variant="secondary" className="ml-2 text-xs">
+                {shares.length}
+              </Badge>
+            )}
           </Button>
           <Button
             variant="ghost"
@@ -648,7 +845,140 @@ export function TempDrive({ shareToken }: TempDriveProps) {
         </div>
       )}
 
-      {(!isAdmin || adminTab === "files") && (
+      {isAdmin && adminTab === "shares" && !viewingShareFiles && (
+        <>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={status?.sharingEnabled ?? true}
+                  onCheckedChange={(checked) => toggleGlobalSharingMutation.mutate(checked)}
+                  data-testid="switch-global-sharing"
+                />
+                <Label className="text-sm">
+                  {status?.sharingEnabled ? (
+                    <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                      <Power className="w-4 h-4" /> Sharing Enabled
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-muted-foreground">
+                      <PowerOff className="w-4 h-4" /> Sharing Disabled
+                    </span>
+                  )}
+                </Label>
+              </div>
+            </div>
+            <Button onClick={openCreateShareDialog} data-testid="button-create-share">
+              <Plus className="w-4 h-4 mr-2" />
+              New Share
+            </Button>
+          </div>
+
+          {!status?.sharingEnabled && (
+            <Card className="border-amber-500/50 bg-amber-500/10">
+              <CardContent className="py-4">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span className="text-sm font-medium">
+                    Global sharing is disabled. Share links will not work until enabled.
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {sharesLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin" />
+            </div>
+          ) : shares.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center text-muted-foreground">
+                <Share2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>No shares created yet</p>
+                <p className="text-sm mt-2">Create a share to allow others to upload and download files</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {shares.map((share) => (
+                    <div 
+                      key={share.id} 
+                      className="flex items-center justify-between gap-4 p-4"
+                      data-testid={`share-row-${share.id}`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium">{share.label}</p>
+                          {share.passwordHash && (
+                            <Badge variant="outline" className="text-xs">
+                              <Lock className="w-3 h-3 mr-1" />
+                              Password
+                            </Badge>
+                          )}
+                          {isShareExpired(share.expiresAt) ? (
+                            <Badge variant="destructive" className="text-xs">Expired</Badge>
+                          ) : share.active ? (
+                            <Badge variant="default" className="text-xs">Active</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">Inactive</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {formatBytes(share.usedBytes)} / 1 GB used | 
+                          Expires: {getTimeRemaining(share.expiresAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openShareFiles(share)}
+                          title="View files"
+                          data-testid={`button-view-share-${share.id}`}
+                        >
+                          <FolderOpen className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => copyShareUrl(`${window.location.origin}/temp-drive/share/${share.token}`)}
+                          title="Copy link"
+                          data-testid={`button-copy-share-${share.id}`}
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditShareDialog(share)}
+                          title="Edit"
+                          data-testid={`button-edit-share-${share.id}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleteShareId(share.id)}
+                          title="Delete"
+                          data-testid={`button-delete-share-${share.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {((!isAdmin) || adminTab === "files" || viewingShareFiles) && (
         <>
           <div className="flex items-center gap-2 flex-wrap">
             <Button asChild data-testid="button-upload-file">
@@ -664,7 +994,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
               </label>
             </Button>
 
-            {isAdmin && files.length > 0 && (
+            {isAdmin && !viewingShareFiles && adminFiles.length > 0 && (
               <Button
                 variant="destructive"
                 onClick={() => setDeleteAllDialogOpen(true)}
@@ -680,7 +1010,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
             <div className="flex justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin" />
             </div>
-          ) : files.length === 0 ? (
+          ) : currentFiles.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
                 <FileIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -691,7 +1021,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
             <Card>
               <CardContent className="p-0">
                 <div className="divide-y">
-                  {files.map((file) => (
+                  {currentFiles.map((file) => (
                     <div 
                       key={file.id} 
                       className="flex items-center justify-between gap-4 p-4"
@@ -735,7 +1065,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
         </>
       )}
 
-      {isAdmin && adminTab === "blocked-ips" && (
+      {isAdmin && adminTab === "blocked-ips" && !viewingShareFiles && (
         <>
           {blockedIpsLoading ? (
             <div className="flex justify-center py-8">
@@ -785,57 +1115,99 @@ export function TempDrive({ shareToken }: TempDriveProps) {
         </>
       )}
 
-      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+      <Dialog open={shareDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setShareDialogOpen(false);
+          setEditingShare(null);
+          setGeneratedShareUrl(null);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Share Temp Drive</DialogTitle>
+            <DialogTitle>{editingShare ? "Edit Share" : "Create New Share"}</DialogTitle>
             <DialogDescription>
-              Create a temporary share link with password protection
+              {editingShare 
+                ? "Update share settings" 
+                : "Create a new share with optional password protection"}
             </DialogDescription>
           </DialogHeader>
 
           {!generatedShareUrl ? (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="share-password">Share Password</Label>
+                <Label htmlFor="share-label">Share Label</Label>
                 <Input
-                  id="share-password"
-                  type="password"
-                  value={sharePassword}
-                  onChange={(e) => setSharePassword(e.target.value)}
-                  placeholder="Password for shared access"
-                  data-testid="input-share-password"
+                  id="share-label"
+                  type="text"
+                  value={shareLabel}
+                  onChange={(e) => setShareLabel(e.target.value)}
+                  placeholder="e.g., Project Files, Team Uploads"
+                  data-testid="input-share-label"
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="share-expiry">Expiry Time</Label>
-                <Select value={shareExpiry} onValueChange={setShareExpiry}>
-                  <SelectTrigger data-testid="select-share-expiry">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="5">5 minutes</SelectItem>
-                    <SelectItem value="15">15 minutes</SelectItem>
-                    <SelectItem value="30">30 minutes</SelectItem>
-                    <SelectItem value="60">1 hour</SelectItem>
-                    <SelectItem value="1440">24 hours</SelectItem>
-                    <SelectItem value="forever">Forever</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {!editingShare && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="share-password">Password (Optional)</Label>
+                    <Input
+                      id="share-password"
+                      type="password"
+                      value={sharePassword}
+                      onChange={(e) => setSharePassword(e.target.value)}
+                      placeholder="Leave blank for no password"
+                      data-testid="input-share-password"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      If set, users will need this password to access the share
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="share-expiry">Expiry Time</Label>
+                    <Select value={shareExpiry} onValueChange={setShareExpiry}>
+                      <SelectTrigger data-testid="select-share-expiry">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="5">5 minutes</SelectItem>
+                        <SelectItem value="15">15 minutes</SelectItem>
+                        <SelectItem value="30">30 minutes</SelectItem>
+                        <SelectItem value="60">1 hour</SelectItem>
+                        <SelectItem value="360">6 hours</SelectItem>
+                        <SelectItem value="720">12 hours</SelectItem>
+                        <SelectItem value="1440">24 hours</SelectItem>
+                        <SelectItem value="forever">Never (no expiry)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              {editingShare && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={editingShare.active}
+                    onCheckedChange={(checked) => setEditingShare({ ...editingShare, active: checked })}
+                    data-testid="switch-share-active"
+                  />
+                  <Label>Share Active</Label>
+                </div>
+              )}
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => setShareDialogOpen(false)}>
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleCreateShare}
-                  disabled={!sharePassword || createShareMutation.isPending}
-                  data-testid="button-create-share"
+                  onClick={editingShare ? handleUpdateShare : handleCreateShare}
+                  disabled={createShareMutation.isPending || updateShareMutation.isPending}
+                  data-testid="button-save-share"
                 >
-                  {createShareMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Create Share Link
+                  {(createShareMutation.isPending || updateShareMutation.isPending) && (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  )}
+                  {editingShare ? "Save Changes" : "Create Share"}
                 </Button>
               </DialogFooter>
             </div>
@@ -848,7 +1220,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={copyShareUrl}
+                    onClick={() => copyShareUrl()}
                     data-testid="button-copy-share-url"
                   >
                     <Copy className="w-4 h-4" />
@@ -860,6 +1232,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
                   onClick={() => {
                     setShareDialogOpen(false);
                     setGeneratedShareUrl(null);
+                    setShareLabel("");
                     setSharePassword("");
                   }}
                 >
@@ -876,7 +1249,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete All Files?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all {files.length} files. This action cannot be undone.
+              This will permanently delete all {adminFiles.length} files. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -908,6 +1281,27 @@ export function TempDrive({ shareToken }: TempDriveProps) {
               data-testid="button-confirm-delete-file"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deleteShareId} onOpenChange={() => setDeleteShareId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Share?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this share and all its files. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteShareId && deleteShareMutation.mutate(deleteShareId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-share"
+            >
+              Delete Share
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

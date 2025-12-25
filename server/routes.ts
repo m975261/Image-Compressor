@@ -1269,22 +1269,49 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid file identifier" });
       }
 
-      const files = await storage.getTempDriveFiles();
-      const file = files.find(f => f.id === fileId);
+      const shareIdQuery = req.query.shareId as string | undefined;
       
-      if (!file) {
-        return res.status(404).json({ message: "File not found" });
-      }
+      if (shareIdQuery) {
+        const share = await storage.getTempDriveShare(shareIdQuery);
+        if (!share || !share.folderId) {
+          return res.status(404).json({ message: "Share not found" });
+        }
 
-      const diskName = getDiskFileName(file);
-      const filePath = path.join(TEMP_DRIVE_DIR, diskName);
-      
-      if (fs.existsSync(filePath) && isPathWithinDirectory(filePath, TEMP_DRIVE_DIR)) {
-        fs.unlinkSync(filePath);
-      }
+        const files = await storage.getShareFiles(share.id);
+        const file = files.find(f => f.id === fileId);
+        
+        if (!file) {
+          return res.status(404).json({ message: "File not found" });
+        }
 
-      await storage.deleteTempDriveFile(fileId);
-      res.json({ success: true });
+        const folderPath = path.join(SHARE_FOLDERS_DIR, share.folderId);
+        const filePath = path.join(folderPath, file.diskFileName);
+        
+        if (fs.existsSync(filePath) && isPathWithinDirectory(filePath, folderPath)) {
+          fs.unlinkSync(filePath);
+        }
+
+        await storage.deleteShareFile(fileId);
+        await storage.updateTempDriveShare(share.id, { usedBytes: Math.max(0, share.usedBytes - file.fileSize) });
+        res.json({ success: true });
+      } else {
+        const files = await storage.getTempDriveFiles();
+        const file = files.find(f => f.id === fileId);
+        
+        if (!file) {
+          return res.status(404).json({ message: "File not found" });
+        }
+
+        const diskName = getDiskFileName(file);
+        const filePath = path.join(TEMP_DRIVE_DIR, diskName);
+        
+        if (fs.existsSync(filePath) && isPathWithinDirectory(filePath, TEMP_DRIVE_DIR)) {
+          fs.unlinkSync(filePath);
+        }
+
+        await storage.deleteTempDriveFile(fileId);
+        res.json({ success: true });
+      }
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Delete failed" });
     }

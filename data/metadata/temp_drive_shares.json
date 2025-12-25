@@ -1,9 +1,13 @@
-{
-  "id": "194eeed7-84c6-41a4-b072-f0c3c9de2e00",
-  "token": "cc430a95d052715136eac07bedd5bd0f",
-  "passwordHash": "$2b$12$3WwgBDceeYwgIfGjwBzvaevI4HxnGjaRoKu1sTfJQfp3ze8RsGCtm",
-  "folderId": "f729a211-1582-4d37-84cd-6fdf0711c6d0",
-  "expiresAt": null,
-  "createdAt": "2025-12-25T12:17:38.883Z",
-  "active": true
-}
+[
+  {
+    "id": "194eeed7-84c6-41a4-b072-f0c3c9de2e00",
+    "token": "cc430a95d052715136eac07bedd5bd0f",
+    "passwordHash": "$2b$12$3WwgBDceeYwgIfGjwBzvaevI4HxnGjaRoKu1sTfJQfp3ze8RsGCtm",
+    "folderId": "f729a211-1582-4d37-84cd-6fdf0711c6d0",
+    "expiresAt": null,
+    "createdAt": "2025-12-25T12:17:38.883Z",
+    "active": true,
+    "label": "Share 1",
+    "usedBytes": 0
+  }
+]
