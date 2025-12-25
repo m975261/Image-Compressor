@@ -3,10 +3,12 @@ import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import crypto from "crypto";
 
-const ADMIN_PASSWORD = "Trilli0n$@P9crkmm6@Milli0n$";
 const SALT_ROUNDS = 12;
 const SESSION_DURATION_HOURS = 4;
 const APP_NAME = "FileTools TempDrive";
+
+const ADMIN_PASSWORD_HASH = process.env.TEMP_DRIVE_ADMIN_HASH || 
+  "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4nQIALQJpqHvCmOe";
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
@@ -17,7 +19,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export async function verifyAdminPassword(password: string): Promise<boolean> {
-  return password === ADMIN_PASSWORD;
+  return bcrypt.compare(password, ADMIN_PASSWORD_HASH);
 }
 
 export function generateTotpSecret(): string {

@@ -1,13 +1,24 @@
 import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
-import type { UploadedFile, ConversionResult } from "@shared/schema";
+import type { 
+  UploadedFile, 
+  ConversionResult, 
+  TempDriveAdmin, 
+  TempDriveFile, 
+  TempDriveShare, 
+  TempDriveSession 
+} from "@shared/schema";
 
 const DATA_PATH = process.env.DATA_PATH || path.join(process.cwd(), "data");
 const METADATA_DIR = path.join(DATA_PATH, "metadata");
 const FILES_METADATA_PATH = path.join(METADATA_DIR, "files.json");
 const CONVERSIONS_METADATA_PATH = path.join(METADATA_DIR, "conversions.json");
 const VERSION_METADATA_PATH = path.join(METADATA_DIR, "version.json");
+const TEMP_DRIVE_ADMIN_PATH = path.join(METADATA_DIR, "temp_drive_admin.json");
+const TEMP_DRIVE_FILES_PATH = path.join(METADATA_DIR, "temp_drive_files.json");
+const TEMP_DRIVE_SHARES_PATH = path.join(METADATA_DIR, "temp_drive_shares.json");
+const TEMP_DRIVE_SESSIONS_PATH = path.join(METADATA_DIR, "temp_drive_sessions.json");
 
 export interface IStorage {
   saveUploadedFile(file: Omit<UploadedFile, "id">, customId?: string): Promise<UploadedFile>;
@@ -20,6 +31,23 @@ export interface IStorage {
   getConversionResult(id: string): Promise<ConversionResult | undefined>;
   
   getNextConversionVersion(): number;
+
+  getTempDriveAdmin(): Promise<TempDriveAdmin | null>;
+  saveTempDriveAdmin(admin: TempDriveAdmin): Promise<void>;
+  
+  getTempDriveFiles(): Promise<TempDriveFile[]>;
+  saveTempDriveFile(file: TempDriveFile): Promise<TempDriveFile>;
+  deleteTempDriveFile(id: string): Promise<boolean>;
+  deleteAllTempDriveFiles(): Promise<void>;
+  
+  getTempDriveShare(): Promise<TempDriveShare | null>;
+  saveTempDriveShare(share: TempDriveShare): Promise<void>;
+  deleteTempDriveShare(): Promise<void>;
+  
+  getTempDriveSession(token: string): Promise<TempDriveSession | null>;
+  saveTempDriveSession(session: TempDriveSession): Promise<void>;
+  deleteTempDriveSession(token: string): Promise<void>;
+  cleanExpiredSessions(): Promise<void>;
 }
 
 interface VersionData {
@@ -167,6 +195,155 @@ export class PersistentStorage implements IStorage {
 
   async getConversionResult(id: string): Promise<ConversionResult | undefined> {
     return this.conversionResults.get(id);
+  }
+
+  async getTempDriveAdmin(): Promise<TempDriveAdmin | null> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_ADMIN_PATH)) {
+        return JSON.parse(fs.readFileSync(TEMP_DRIVE_ADMIN_PATH, "utf-8"));
+      }
+    } catch (error) {
+      console.error("Error loading temp drive admin:", error);
+    }
+    return null;
+  }
+
+  async saveTempDriveAdmin(admin: TempDriveAdmin): Promise<void> {
+    try {
+      fs.writeFileSync(TEMP_DRIVE_ADMIN_PATH, JSON.stringify(admin, null, 2));
+    } catch (error) {
+      console.error("Error saving temp drive admin:", error);
+    }
+  }
+
+  async getTempDriveFiles(): Promise<TempDriveFile[]> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_FILES_PATH)) {
+        const data = JSON.parse(fs.readFileSync(TEMP_DRIVE_FILES_PATH, "utf-8"));
+        return Array.isArray(data) ? data : [];
+      }
+    } catch (error) {
+      console.error("Error loading temp drive files:", error);
+    }
+    return [];
+  }
+
+  async saveTempDriveFile(file: TempDriveFile): Promise<TempDriveFile> {
+    const files = await this.getTempDriveFiles();
+    files.push(file);
+    try {
+      fs.writeFileSync(TEMP_DRIVE_FILES_PATH, JSON.stringify(files, null, 2));
+    } catch (error) {
+      console.error("Error saving temp drive files:", error);
+    }
+    return file;
+  }
+
+  async deleteTempDriveFile(id: string): Promise<boolean> {
+    const files = await this.getTempDriveFiles();
+    const filtered = files.filter(f => f.id !== id);
+    if (filtered.length < files.length) {
+      try {
+        fs.writeFileSync(TEMP_DRIVE_FILES_PATH, JSON.stringify(filtered, null, 2));
+      } catch (error) {
+        console.error("Error saving temp drive files:", error);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  async deleteAllTempDriveFiles(): Promise<void> {
+    try {
+      fs.writeFileSync(TEMP_DRIVE_FILES_PATH, JSON.stringify([], null, 2));
+    } catch (error) {
+      console.error("Error clearing temp drive files:", error);
+    }
+  }
+
+  async getTempDriveShare(): Promise<TempDriveShare | null> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_SHARES_PATH)) {
+        return JSON.parse(fs.readFileSync(TEMP_DRIVE_SHARES_PATH, "utf-8"));
+      }
+    } catch (error) {
+      console.error("Error loading temp drive share:", error);
+    }
+    return null;
+  }
+
+  async saveTempDriveShare(share: TempDriveShare): Promise<void> {
+    try {
+      fs.writeFileSync(TEMP_DRIVE_SHARES_PATH, JSON.stringify(share, null, 2));
+    } catch (error) {
+      console.error("Error saving temp drive share:", error);
+    }
+  }
+
+  async deleteTempDriveShare(): Promise<void> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_SHARES_PATH)) {
+        fs.unlinkSync(TEMP_DRIVE_SHARES_PATH);
+      }
+    } catch (error) {
+      console.error("Error deleting temp drive share:", error);
+    }
+  }
+
+  private sessions: Map<string, TempDriveSession> = new Map();
+
+  async getTempDriveSession(token: string): Promise<TempDriveSession | null> {
+    await this.loadSessions();
+    const session = this.sessions.get(token);
+    if (session && new Date(session.expiresAt) <= new Date()) {
+      this.sessions.delete(token);
+      await this.saveSessions();
+      return null;
+    }
+    return session || null;
+  }
+
+  async saveTempDriveSession(session: TempDriveSession): Promise<void> {
+    await this.loadSessions();
+    this.sessions.set(session.token, session);
+    await this.saveSessions();
+  }
+
+  async deleteTempDriveSession(token: string): Promise<void> {
+    await this.loadSessions();
+    this.sessions.delete(token);
+    await this.saveSessions();
+  }
+
+  async cleanExpiredSessions(): Promise<void> {
+    await this.loadSessions();
+    const now = new Date();
+    for (const [token, session] of this.sessions.entries()) {
+      if (new Date(session.expiresAt) <= now) {
+        this.sessions.delete(token);
+      }
+    }
+    await this.saveSessions();
+  }
+
+  private async loadSessions(): Promise<void> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_SESSIONS_PATH)) {
+        const data = JSON.parse(fs.readFileSync(TEMP_DRIVE_SESSIONS_PATH, "utf-8"));
+        this.sessions = new Map(Object.entries(data));
+      }
+    } catch (error) {
+      console.error("Error loading sessions:", error);
+    }
+  }
+
+  private async saveSessions(): Promise<void> {
+    try {
+      const data = Object.fromEntries(this.sessions);
+      fs.writeFileSync(TEMP_DRIVE_SESSIONS_PATH, JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.error("Error saving sessions:", error);
+    }
   }
 }
 
