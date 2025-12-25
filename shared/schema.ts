@@ -78,14 +78,21 @@ export type TempDriveFile = z.infer<typeof tempDriveFileSchema>;
 
 export const tempDriveShareSchema = z.object({
   id: z.string(),
+  label: z.string(),
   token: z.string(),
-  passwordHash: z.string(),
+  passwordHash: z.string().nullable(),
   folderId: z.string(),
   expiresAt: z.string().nullable(),
   createdAt: z.string(),
   active: z.boolean(),
+  usedBytes: z.number(),
 });
 export type TempDriveShare = z.infer<typeof tempDriveShareSchema>;
+
+export const tempDriveGlobalSettingsSchema = z.object({
+  sharingEnabled: z.boolean(),
+});
+export type TempDriveGlobalSettings = z.infer<typeof tempDriveGlobalSettingsSchema>;
 
 export const tempDriveShareFileSchema = z.object({
   id: z.string(),
@@ -97,6 +104,8 @@ export const tempDriveShareFileSchema = z.object({
   uploadedAt: z.string(),
 });
 export type TempDriveShareFile = z.infer<typeof tempDriveShareFileSchema>;
+
+export const SHARE_QUOTA_BYTES = 1024 * 1024 * 1024; // 1GB per share
 
 export const tempDriveLoginAttemptSchema = z.object({
   ip: z.string(),
@@ -132,10 +141,19 @@ export const adminLoginRequestSchema = z.object({
 export type AdminLoginRequest = z.infer<typeof adminLoginRequestSchema>;
 
 export const shareCreateRequestSchema = z.object({
-  password: z.string().min(1, "Share password is required"),
+  label: z.string().min(1, "Label is required"),
+  password: z.string().nullable(),
   expiryMinutes: z.number().min(1).nullable(),
 });
 export type ShareCreateRequest = z.infer<typeof shareCreateRequestSchema>;
+
+export const shareUpdateRequestSchema = z.object({
+  label: z.string().min(1).optional(),
+  password: z.string().nullable().optional(),
+  active: z.boolean().optional(),
+  expiryMinutes: z.number().min(1).nullable().optional(),
+});
+export type ShareUpdateRequest = z.infer<typeof shareUpdateRequestSchema>;
 
 export const shareAccessRequestSchema = z.object({
   password: z.string().min(1, "Password is required"),

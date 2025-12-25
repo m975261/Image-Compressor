@@ -10,7 +10,8 @@ import type {
   TempDriveShareFile,
   TempDriveSession,
   TempDriveLoginAttempt,
-  TempDriveBlockedIp
+  TempDriveBlockedIp,
+  TempDriveGlobalSettings
 } from "@shared/schema";
 
 const DATA_PATH = process.env.DATA_PATH || path.join(process.cwd(), "data");
@@ -25,6 +26,7 @@ const TEMP_DRIVE_SESSIONS_PATH = path.join(METADATA_DIR, "temp_drive_sessions.js
 const TEMP_DRIVE_SHARE_FILES_PATH = path.join(METADATA_DIR, "temp_drive_share_files.json");
 const TEMP_DRIVE_LOGIN_ATTEMPTS_PATH = path.join(METADATA_DIR, "temp_drive_login_attempts.json");
 const TEMP_DRIVE_BLOCKED_IPS_PATH = path.join(METADATA_DIR, "temp_drive_blocked_ips.json");
+const TEMP_DRIVE_GLOBAL_SETTINGS_PATH = path.join(METADATA_DIR, "temp_drive_global_settings.json");
 
 export interface IStorage {
   saveUploadedFile(file: Omit<UploadedFile, "id">, customId?: string): Promise<UploadedFile>;
@@ -46,9 +48,15 @@ export interface IStorage {
   deleteTempDriveFile(id: string): Promise<boolean>;
   deleteAllTempDriveFiles(): Promise<void>;
   
-  getTempDriveShare(): Promise<TempDriveShare | null>;
+  getAllTempDriveShares(): Promise<TempDriveShare[]>;
+  getTempDriveShare(id: string): Promise<TempDriveShare | null>;
+  getTempDriveShareByToken(token: string): Promise<TempDriveShare | null>;
   saveTempDriveShare(share: TempDriveShare): Promise<void>;
-  deleteTempDriveShare(): Promise<void>;
+  updateTempDriveShare(id: string, updates: Partial<TempDriveShare>): Promise<TempDriveShare | null>;
+  deleteTempDriveShare(id: string): Promise<boolean>;
+  
+  getGlobalSettings(): Promise<TempDriveGlobalSettings>;
+  saveGlobalSettings(settings: TempDriveGlobalSettings): Promise<void>;
   
   getShareFiles(shareId: string): Promise<TempDriveShareFile[]>;
   saveShareFile(file: TempDriveShareFile): Promise<TempDriveShareFile>;
@@ -282,32 +290,93 @@ export class PersistentStorage implements IStorage {
     }
   }
 
-  async getTempDriveShare(): Promise<TempDriveShare | null> {
+  async getAllTempDriveShares(): Promise<TempDriveShare[]> {
     try {
       if (fs.existsSync(TEMP_DRIVE_SHARES_PATH)) {
-        return JSON.parse(fs.readFileSync(TEMP_DRIVE_SHARES_PATH, "utf-8"));
+        const data = JSON.parse(fs.readFileSync(TEMP_DRIVE_SHARES_PATH, "utf-8"));
+        if (Array.isArray(data)) {
+          return data;
+        }
+        if (data && data.id) {
+          const migrated: TempDriveShare = {
+            ...data,
+            label: data.label || "Share 1",
+            usedBytes: data.usedBytes || 0,
+          };
+          await this.saveAllShares([migrated]);
+          return [migrated];
+        }
       }
     } catch (error) {
-      console.error("Error loading temp drive share:", error);
+      console.error("Error loading temp drive shares:", error);
     }
-    return null;
+    return [];
+  }
+
+  private async saveAllShares(shares: TempDriveShare[]): Promise<void> {
+    try {
+      fs.writeFileSync(TEMP_DRIVE_SHARES_PATH, JSON.stringify(shares, null, 2));
+    } catch (error) {
+      console.error("Error saving shares:", error);
+    }
+  }
+
+  async getTempDriveShare(id: string): Promise<TempDriveShare | null> {
+    const shares = await this.getAllTempDriveShares();
+    return shares.find(s => s.id === id) || null;
+  }
+
+  async getTempDriveShareByToken(token: string): Promise<TempDriveShare | null> {
+    const shares = await this.getAllTempDriveShares();
+    return shares.find(s => s.token === token) || null;
   }
 
   async saveTempDriveShare(share: TempDriveShare): Promise<void> {
-    try {
-      fs.writeFileSync(TEMP_DRIVE_SHARES_PATH, JSON.stringify(share, null, 2));
-    } catch (error) {
-      console.error("Error saving temp drive share:", error);
+    const shares = await this.getAllTempDriveShares();
+    const existing = shares.findIndex(s => s.id === share.id);
+    if (existing >= 0) {
+      shares[existing] = share;
+    } else {
+      shares.push(share);
     }
+    await this.saveAllShares(shares);
   }
 
-  async deleteTempDriveShare(): Promise<void> {
+  async updateTempDriveShare(id: string, updates: Partial<TempDriveShare>): Promise<TempDriveShare | null> {
+    const shares = await this.getAllTempDriveShares();
+    const index = shares.findIndex(s => s.id === id);
+    if (index < 0) return null;
+    shares[index] = { ...shares[index], ...updates };
+    await this.saveAllShares(shares);
+    return shares[index];
+  }
+
+  async deleteTempDriveShare(id: string): Promise<boolean> {
+    const shares = await this.getAllTempDriveShares();
+    const filtered = shares.filter(s => s.id !== id);
+    if (filtered.length < shares.length) {
+      await this.saveAllShares(filtered);
+      return true;
+    }
+    return false;
+  }
+
+  async getGlobalSettings(): Promise<TempDriveGlobalSettings> {
     try {
-      if (fs.existsSync(TEMP_DRIVE_SHARES_PATH)) {
-        fs.unlinkSync(TEMP_DRIVE_SHARES_PATH);
+      if (fs.existsSync(TEMP_DRIVE_GLOBAL_SETTINGS_PATH)) {
+        return JSON.parse(fs.readFileSync(TEMP_DRIVE_GLOBAL_SETTINGS_PATH, "utf-8"));
       }
     } catch (error) {
-      console.error("Error deleting temp drive share:", error);
+      console.error("Error loading global settings:", error);
+    }
+    return { sharingEnabled: true };
+  }
+
+  async saveGlobalSettings(settings: TempDriveGlobalSettings): Promise<void> {
+    try {
+      fs.writeFileSync(TEMP_DRIVE_GLOBAL_SETTINGS_PATH, JSON.stringify(settings, null, 2));
+    } catch (error) {
+      console.error("Error saving global settings:", error);
     }
   }
 

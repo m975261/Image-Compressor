@@ -1,1 +1,16 @@
-{}
+{
+  "e256e8c6e511dbcdefa7ce2ecab03453b9256f66e4aaaf1cfe1339e3c2c20bf3": {
+    "token": "e256e8c6e511dbcdefa7ce2ecab03453b9256f66e4aaaf1cfe1339e3c2c20bf3",
+    "type": "admin",
+    "shareId": null,
+    "expiresAt": "2025-12-25T16:16:18.247Z",
+    "createdAt": "2025-12-25T12:16:18.247Z"
+  },
+  "0131e7c35e239fb66848cc76d488c191af6c2eb5db6935c3fc3fa4e734412cdb": {
+    "token": "0131e7c35e239fb66848cc76d488c191af6c2eb5db6935c3fc3fa4e734412cdb",
+    "type": "share",
+    "shareId": "194eeed7-84c6-41a4-b072-f0c3c9de2e00",
+    "expiresAt": "2025-12-25T16:18:28.395Z",
+    "createdAt": "2025-12-25T12:18:28.395Z"
+  }
+}

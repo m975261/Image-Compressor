@@ -1,0 +1,194 @@
+Context
+The project already includes:
+
+Admin Temp Drive (password + OTP)
+
+Isolated Share Drives (each share = empty folder)
+
+Share password (optional)
+
+Expiry handling
+
+IP blocking
+
+Admin-only controls
+
+This prompt introduces a UI and behavior upgrade, not a redesign.
+
+🎯 Change Scope (What to Add)
+1️⃣ Replace single “Share Drive” with Share Manager UI
+
+When admin enables sharing:
+
+A gray “Add Share” box becomes active
+
+Clicking it:
+
+Adds a new row (share record)
+
+Does not affect existing shares
+
+🧾 Share Record Row (Each Line)
+
+Each row must contain:
+
+Share Link (read-only field)
+
+Password field (optional)
+
+Enable / Disable toggle
+
+Delete button
+
+Copy link button
+
+Admin access button (visit user drive)
+
+Each row represents one isolated shared drive folder.
+
+🔐 Password Behavior (Per Share)
+
+Admin may:
+
+Set a password
+
+Leave it empty (passwordless share)
+
+Password is:
+
+Hashed server-side
+
+Never stored in plaintext
+
+Users accessing the link:
+
+Asked for password only if one is configured
+
+🔁 Enable / Disable Logic (Per Share)
+
+Enable
+
+Share link becomes active
+
+Users can access their isolated drive
+
+Disable
+
+Share link becomes inaccessible
+
+Folder & files remain intact
+
+Can be re-enabled later
+
+Delete
+
+Permanently deletes:
+
+Share record
+
+Share folder
+
+All files inside
+
+🧠 Global Share Toggle (Important)
+
+Existing main “Enable Sharing” toggle remains
+
+Behavior changes:
+
+When global sharing is DISABLED:
+
+ALL share links become inaccessible
+
+Share records remain visible to admin
+
+No data is deleted
+
+When global sharing is ENABLED again:
+
+All previously enabled shares become active again
+
+👑 Admin Access to User Drives
+
+Each share row must include:
+
+“Open User Drive” button
+
+Behavior:
+
+Opens the shared folder
+
+Uses admin’s authenticated session
+
+Admin has:
+
+Full read/write/delete access
+
+This does NOT affect user permissions
+
+📦 Storage Quota (NEW RULE)
+
+For shared users only:
+
+Maximum storage per shared drive: 1 GB
+
+Enforced server-side
+
+UI must show:
+
+Used space
+
+Remaining space
+
+Upload must fail gracefully if quota exceeded
+
+Admin drive has no quota limit.
+
+🛡️ Security Rules (Must Remain Intact)
+
+Share drives remain isolated
+
+Users never see admin files
+
+Users cannot delete files
+
+Users cannot manage shares
+
+IP blocking logic stays unchanged
+
+Permissions enforced server-side only
+
+🧪 Acceptance Criteria
+
+This change is correct only if:
+
+✅ Admin can add multiple share rows
+✅ Each row maps to a unique isolated folder
+✅ Shares can be enabled / disabled independently
+✅ Global sharing toggle disables all shares without deleting them
+✅ Admin can open any user drive with full access
+✅ Users can upload & download only
+✅ Password is optional per share
+✅ Copy link button works
+✅ Deleting a share removes its data
+✅ Shared users are limited to 1GB storage
+
+📦 Deliverables
+
+Share Manager UI (gray add box + rows)
+
+Backend logic for multiple shares
+
+Optional password per share
+
+Enable/disable behavior (per share + global)
+
+Admin “open user drive” access
+
+1GB quota enforcement for shared users
+
+Minimal explanation of changes
+
+🔁 One-Line Summary
+
+Upgrade Share Drive into a multi-share manager with per-share rows, optional passwords, admin access to user drives, global enable/disable control, and a 1GB quota per shared user.
