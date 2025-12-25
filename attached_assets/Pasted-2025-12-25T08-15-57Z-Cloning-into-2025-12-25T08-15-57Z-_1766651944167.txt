@@ -1,0 +1,237 @@
+2025-12-25T08:15:57Z Cloning into '.'...
+2025-12-25T08:15:57Z Warning: Permanently added the RSA host key for IP address '140.82.114.4' to the list of known hosts.
+2025-12-25T08:15:57Z Reset branch 'main'
+2025-12-25T08:15:57Z Your branch is up to date with 'origin/main'.
+2025-12-25T08:15:57Z Pulling cache layers for index.docker.io/muaeabudhabi/filetrans:latest...
+2025-12-25T08:16:37Z Done!
+2025-12-25T08:16:37Z KernelVersion: 5.4.0-1068-aws
+2025-12-25T08:16:37Z Components: [{u'Version': u'20.10.15', u'Name': u'Engine', u'Details': {u'KernelVersion': u'5.4.0-1068-aws', u'Os': u'linux', u'BuildTime': u'2022-05-05T13:17:24.000000000+00:00', u'ApiVersion': u'1.41', u'MinAPIVersion': u'1.12', u'GitCommit': u'4433bf6', u'Arch': u'amd64', u'Experimental': u'false', u'GoVersion': u'go1.17.9'}}, {u'Version': u'1.6.21', u'Name': u'containerd', u'Details': {u'GitCommit': u'3dce8eb055cbb6872793272b4f20ed16117344f8'}}, {u'Version': u'1.1.7', u'Name': u'runc', u'Details': {u'GitCommit': u'v1.1.7-0-g860f061'}}, {u'Version': u'0.19.0', u'Name': u'docker-init', u'Details': {u'GitCommit': u'de40ad0'}}]
+2025-12-25T08:16:37Z Arch: amd64
+2025-12-25T08:16:37Z BuildTime: 2022-05-05T13:17:24.000000000+00:00
+2025-12-25T08:16:37Z ApiVersion: 1.41
+2025-12-25T08:16:37Z Platform: {u'Name': u'Docker Engine - Community'}
+2025-12-25T08:16:37Z Version: 20.10.15
+2025-12-25T08:16:37Z MinAPIVersion: 1.12
+2025-12-25T08:16:37Z GitCommit: 4433bf6
+2025-12-25T08:16:37Z Os: linux
+2025-12-25T08:16:37Z GoVersion: go1.17.9
+2025-12-25T08:16:37Z Buildkit: Starting build for index.docker.io/muaeabudhabi/filetrans:latest...
+2025-12-25T08:16:41Z #1 [internal] load build definition from Dockerfile
+2025-12-25T08:16:41Z #1 transferring dockerfile: 498B done
+2025-12-25T08:16:41Z #1 DONE 0.0s
+2025-12-25T08:16:41Z 
+2025-12-25T08:16:41Z #2 [internal] load .dockerignore
+2025-12-25T08:16:41Z #2 transferring context: 128B done
+2025-12-25T08:16:41Z #2 DONE 0.1s
+2025-12-25T08:16:41Z 
+2025-12-25T08:16:41Z #3 [auth] library/node:pull token for registry-1.docker.io
+2025-12-25T08:16:42Z #3 DONE 0.0s
+2025-12-25T08:16:42Z 
+2025-12-25T08:16:42Z #4 [internal] load metadata for docker.io/library/node:20-alpine
+2025-12-25T08:16:42Z #4 DONE 0.5s
+2025-12-25T08:16:42Z 
+2025-12-25T08:16:42Z #5 importing cache manifest from index.docker.io/muaeabudhabi/filetrans:latest
+2025-12-25T08:16:42Z #5 DONE 0.0s
+2025-12-25T08:16:42Z 
+2025-12-25T08:16:42Z #6 [1/9] FROM docker.io/library/node:20-alpine@sha256:658d0f63e501824d6c23e06d4bb95c71e7d704537c9d9272f488ac03a370d448
+2025-12-25T08:16:42Z #6 resolve docker.io/library/node:20-alpine@sha256:658d0f63e501824d6c23e06d4bb95c71e7d704537c9d9272f488ac03a370d448 0.0s done
+2025-12-25T08:16:42Z #6 sha256:658d0f63e501824d6c23e06d4bb95c71e7d704537c9d9272f488ac03a370d448 7.67kB / 7.67kB done
+2025-12-25T08:16:42Z #6 sha256:fcbb8f7d018707c656a4da2eea8a15f2893d2258093fea9ff2ea5ea1cba82112 1.72kB / 1.72kB done
+2025-12-25T08:16:42Z #6 sha256:e80b0510ba947015cacddea3d23dcdc761e399971c074a1bf32eea7e44510524 6.52kB / 6.52kB done
+2025-12-25T08:16:42Z #6 DONE 0.2s
+2025-12-25T08:16:42Z 
+2025-12-25T08:16:42Z #7 [internal] load build context
+2025-12-25T08:16:42Z #7 transferring context: 2.89MB 0.2s done
+2025-12-25T08:16:42Z #7 DONE 0.2s
+2025-12-25T08:16:42Z 
+2025-12-25T08:16:42Z #8 [2/9] RUN apk add --no-cache gifsicle ffmpeg imagemagick
+2025-12-25T08:16:43Z #8 0.985 (  1/111) Installing libSvtAv1Enc (3.1.2-r0)
+2025-12-25T08:16:43Z #8 1.072 (  2/111) Installing aom-libs (3.13.1-r0)
+2025-12-25T08:16:43Z #8 1.155 (  3/111) Installing libxau (1.0.12-r0)
+2025-12-25T08:16:43Z #8 1.158 (  4/111) Installing libmd (1.1.0-r0)
+2025-12-25T08:16:43Z #8 1.163 (  5/111) Installing libbsd (0.12.2-r0)
+2025-12-25T08:16:43Z #8 1.167 (  6/111) Installing libxdmcp (1.1.5-r1)
+2025-12-25T08:16:43Z #8 1.178 (  7/111) Installing libxcb (1.17.0-r1)
+2025-12-25T08:16:43Z #8 1.192 (  8/111) Installing libx11 (1.8.12-r1)
+2025-12-25T08:16:43Z #8 1.243 (  9/111) Installing hwdata-pci (0.401-r0)
+2025-12-25T08:16:43Z #8 1.263 ( 10/111) Installing libpciaccess (0.18.1-r1)
+2025-12-25T08:16:43Z #8 1.267 ( 11/111) Installing libdrm (2.4.131-r0)
+2025-12-25T08:16:43Z #8 1.278 ( 12/111) Installing libxext (1.3.6-r2)
+2025-12-25T08:16:43Z #8 1.283 ( 13/111) Installing libxfixes (6.0.2-r0)
+2025-12-25T08:16:43Z #8 1.287 ( 14/111) Installing libffi (3.5.2-r0)
+2025-12-25T08:16:43Z #8 1.291 ( 15/111) Installing wayland-libs-client (1.24.0-r0)
+2025-12-25T08:16:43Z #8 1.295 ( 16/111) Installing libva (2.22.0-r1)
+2025-12-25T08:16:43Z #8 1.302 ( 17/111) Installing libvdpau (1.5-r4)
+2025-12-25T08:16:43Z #8 1.306 ( 18/111) Installing libvpl (2.15.0-r1)
+2025-12-25T08:16:43Z #8 1.315 ( 19/111) Installing ffmpeg-libavutil (8.0.1-r0)
+2025-12-25T08:16:43Z #8 1.332 ( 20/111) Installing libdav1d (1.5.2-r0)
+2025-12-25T08:16:43Z #8 1.354 ( 21/111) Installing brotli-libs (1.2.0-r0)
+2025-12-25T08:16:44Z #8 1.370 ( 22/111) Installing libhwy (1.3.0-r0)
+2025-12-25T08:16:44Z #8 1.374 ( 23/111) Installing lcms2 (2.17-r0)
+2025-12-25T08:16:44Z #8 1.383 ( 24/111) Installing libjxl (0.11.1-r3)
+2025-12-25T08:16:44Z #8 1.446 ( 25/111) Installing lame-libs (3.100-r5)
+2025-12-25T08:16:44Z #8 1.453 ( 26/111) Installing opus (1.5.2-r1)
+2025-12-25T08:16:44Z #8 1.463 ( 27/111) Installing rav1e-libs (0.8.1-r0)
+2025-12-25T08:16:44Z #8 1.492 ( 28/111) Installing spirv-tools (1.4.321.0-r1)
+2025-12-25T08:16:44Z #8 1.543 ( 29/111) Installing glslang-libs (1.4.321.0-r0)
+2025-12-25T08:16:44Z #8 1.570 ( 30/111) Installing shaderc (2025.3-r0)
+2025-12-25T08:16:44Z #8 1.577 ( 31/111) Installing libgomp (15.2.0-r2)
+2025-12-25T08:16:44Z #8 1.585 ( 32/111) Installing soxr (0.1.3-r7)
+2025-12-25T08:16:44Z #8 1.591 ( 33/111) Installing ffmpeg-libswresample (8.0.1-r0)
+2025-12-25T08:16:44Z #8 1.597 ( 34/111) Installing libogg (1.3.6-r0)
+2025-12-25T08:16:44Z #8 1.602 ( 35/111) Installing libtheora (1.2.0-r0)
+2025-12-25T08:16:44Z #8 1.615 ( 36/111) Installing libvorbis (1.3.7-r2)
+2025-12-25T08:16:44Z #8 1.625 ( 37/111) Installing libvpx (1.15.2-r0)
+2025-12-25T08:16:44Z #8 1.663 ( 38/111) Installing libsharpyuv (1.6.0-r0)
+2025-12-25T08:16:44Z #8 1.667 ( 39/111) Installing libwebp (1.6.0-r0)
+2025-12-25T08:16:44Z #8 1.678 ( 40/111) Installing libwebpmux (1.6.0-r0)
+2025-12-25T08:16:44Z #8 1.683 ( 41/111) Installing x264-libs (0.164.3108-r1)
+2025-12-25T08:16:44Z #8 1.710 ( 42/111) Installing numactl (2.0.18-r0)
+2025-12-25T08:16:44Z #8 1.714 ( 43/111) Installing x265-libs (4.1-r0)
+2025-12-25T08:16:44Z #8 1.877 ( 44/111) Installing xvidcore (1.3.7-r2)
+2025-12-25T08:16:44Z #8 1.885 ( 45/111) Installing ffmpeg-libavcodec (8.0.1-r0)
+2025-12-25T08:16:44Z #8 2.122 ( 46/111) Installing alsa-lib (1.2.14-r2)
+2025-12-25T08:16:44Z #8 2.147 ( 47/111) Installing libexpat (2.7.3-r0)
+2025-12-25T08:16:44Z #8 2.152 ( 48/111) Installing libbz2 (1.0.8-r6)
+2025-12-25T08:16:44Z #8 2.156 ( 49/111) Installing libpng (1.6.53-r0)
+2025-12-25T08:16:44Z #8 2.162 ( 50/111) Installing freetype (2.14.1-r0)
+2025-12-25T08:16:44Z #8 2.175 ( 51/111) Installing fontconfig (2.17.1-r0)
+2025-12-25T08:16:44Z #8 2.191 ( 52/111) Installing fribidi (1.0.16-r2)
+2025-12-25T08:16:44Z #8 2.196 ( 53/111) Installing libintl (0.24.1-r1)
+2025-12-25T08:16:44Z #8 2.202 ( 54/111) Installing libeconf (0.8.0-r0)
+2025-12-25T08:16:44Z #8 2.206 ( 55/111) Installing libblkid (2.41.2-r0)
+2025-12-25T08:16:44Z #8 2.212 ( 56/111) Installing libmount (2.41.2-r0)
+2025-12-25T08:16:44Z #8 2.218 ( 57/111) Installing pcre2 (10.47-r0)
+2025-12-25T08:16:44Z #8 2.231 ( 58/111) Installing glib (2.86.3-r0)
+2025-12-25T08:16:44Z #8 2.296 ( 59/111) Installing graphite2 (1.3.14-r6)
+2025-12-25T08:16:44Z #8 2.302 ( 60/111) Installing harfbuzz (12.2.0-r0)
+2025-12-25T08:16:44Z #8 2.322 ( 61/111) Installing libunibreak (6.1-r0)
+2025-12-25T08:16:44Z #8 2.328 ( 62/111) Installing libass (0.17.4-r0)
+2025-12-25T08:16:44Z #8 2.336 ( 63/111) Installing libudfread (1.2.0-r0)
+2025-12-25T08:16:45Z #8 2.342 ( 64/111) Installing libbluray (1.4.0-r0)
+2025-12-25T08:16:45Z #8 2.349 ( 65/111) Installing mpg123-libs (1.33.3-r0)
+2025-12-25T08:16:45Z #8 2.358 ( 66/111) Installing libopenmpt (0.8.3-r0)
+2025-12-25T08:16:45Z #8 2.379 ( 67/111) Installing cjson (1.7.19-r1)
+2025-12-25T08:16:45Z #8 2.383 ( 68/111) Installing mbedtls (3.6.5-r0)
+2025-12-25T08:16:45Z #8 2.397 ( 69/111) Installing librist (0.2.10-r1)
+2025-12-25T08:16:45Z #8 2.404 ( 70/111) Installing libsrt (1.5.3-r1)
+2025-12-25T08:16:45Z #8 2.419 ( 71/111) Installing libssh (0.11.3-r0)
+2025-12-25T08:16:45Z #8 2.428 ( 72/111) Installing xz-libs (5.8.1-r0)
+2025-12-25T08:16:45Z #8 2.434 ( 73/111) Installing libxml2 (2.13.9-r0)
+2025-12-25T08:16:45Z #8 2.457 ( 74/111) Installing libsodium (1.0.20-r0)
+2025-12-25T08:16:45Z #8 2.472 ( 75/111) Installing libzmq (4.3.5-r2)
+2025-12-25T08:16:45Z #8 2.486 ( 76/111) Installing ffmpeg-libavformat (8.0.1-r0)
+2025-12-25T08:16:45Z #8 2.525 ( 77/111) Installing serd-libs (0.32.4-r0)
+2025-12-25T08:16:45Z #8 2.530 ( 78/111) Installing zix-libs (0.6.2-r0)
+2025-12-25T08:16:45Z #8 2.535 ( 79/111) Installing sord-libs (0.16.18-r0)
+2025-12-25T08:16:45Z #8 2.539 ( 80/111) Installing sratom (0.6.18-r0)
+2025-12-25T08:16:45Z #8 2.544 ( 81/111) Installing lilv-libs (0.24.26-r0)
+2025-12-25T08:16:45Z #8 2.548 ( 82/111) Installing libdovi (3.3.2-r0)
+2025-12-25T08:16:45Z #8 2.557 ( 83/111) Installing vulkan-loader (1.4.321.0-r0)
+2025-12-25T08:16:45Z #8 2.565 ( 84/111) Installing libplacebo (7.351.0-r0)
+2025-12-25T08:16:45Z #8 2.583 ( 85/111) Installing ffmpeg-libswscale (8.0.1-r0)
+2025-12-25T08:16:45Z #8 2.608 ( 86/111) Installing vidstab (1.1.1-r0)
+2025-12-25T08:16:45Z #8 2.613 ( 87/111) Installing zimg (3.0.6-r0)
+2025-12-25T08:16:45Z #8 2.624 ( 88/111) Installing ffmpeg-libavfilter (8.0.1-r0)
+2025-12-25T08:16:45Z #8 2.700 ( 89/111) Installing libasyncns (0.8-r4)
+2025-12-25T08:16:45Z #8 2.707 ( 90/111) Installing dbus-libs (1.16.2-r1)
+2025-12-25T08:16:45Z #8 2.714 ( 91/111) Installing libltdl (2.5.4-r2)
+2025-12-25T08:16:45Z #8 2.718 ( 92/111) Installing orc (0.4.41-r0)
+2025-12-25T08:16:45Z #8 2.728 ( 93/111) Installing libflac (1.4.3-r2)
+2025-12-25T08:16:45Z #8 2.738 ( 94/111) Installing libsndfile (1.2.2-r2)
+2025-12-25T08:16:45Z #8 2.752 ( 95/111) Installing speexdsp (1.2.1-r2)
+2025-12-25T08:16:45Z #8 2.757 ( 96/111) Installing tdb-libs (1.4.14-r0)
+2025-12-25T08:16:45Z #8 2.763 ( 97/111) Installing libpulse (17.0-r5)
+2025-12-25T08:16:45Z #8 2.781 ( 98/111) Installing libjpeg-turbo (3.1.2-r0)
+2025-12-25T08:16:45Z #8 2.791 ( 99/111) Installing json-c (0.18-r1)
+2025-12-25T08:16:45Z #8 2.796 (100/111) Installing v4l-utils-libs (1.32.0-r0)
+2025-12-25T08:16:45Z #8 2.806 (101/111) Installing ffmpeg-libavdevice (8.0.1-r0)
+2025-12-25T08:16:45Z #8 2.816 (102/111) Installing ffmpeg (8.0.1-r0)
+2025-12-25T08:16:45Z #8 2.828 (103/111) Installing gifsicle (1.96-r0)
+2025-12-25T08:16:45Z #8 2.836 (104/111) Installing fftw-double-libs (3.3.10-r7)
+2025-12-25T08:16:45Z #8 2.863 (105/111) Installing libraqm (0.10.2-r0)
+2025-12-25T08:16:45Z #8 2.866 (106/111) Installing imagemagick-libs (7.1.2.8-r0)
+2025-12-25T08:16:45Z #8 2.914 (107/111) Installing imagemagick (7.1.2.8-r0)
+2025-12-25T08:16:45Z #8 2.984 (108/111) Installing imagemagick-jpeg (7.1.2.8-r0)
+2025-12-25T08:16:45Z #8 2.989 (109/111) Installing imagemagick-jxl (7.1.2.8-r0)
+2025-12-25T08:16:45Z #8 2.993 (110/111) Installing libwebpdemux (1.6.0-r0)
+2025-12-25T08:16:45Z #8 2.997 (111/111) Installing imagemagick-webp (7.1.2.8-r0)
+2025-12-25T08:16:45Z #8 3.002 Executing busybox-1.37.0-r30.trigger
+2025-12-25T08:16:45Z #8 3.008 Executing glib-2.86.3-r0.trigger
+2025-12-25T08:16:45Z #8 3.016 OK: 145.7 MiB in 129 packages
+2025-12-25T08:16:47Z #8 DONE 4.5s
+2025-12-25T08:16:47Z 
+2025-12-25T08:16:47Z #9 [3/9] WORKDIR /app
+2025-12-25T08:16:47Z #9 DONE 0.1s
+2025-12-25T08:16:47Z 
+2025-12-25T08:16:47Z #10 [4/9] COPY package*.json ./
+2025-12-25T08:16:47Z #10 DONE 0.1s
+2025-12-25T08:16:47Z 
+2025-12-25T08:16:47Z #11 [5/9] RUN npm ci
+2025-12-25T08:17:12Z #11 24.95 
+2025-12-25T08:17:12Z #11 24.95 added 513 packages, and audited 514 packages in 24s
+2025-12-25T08:17:12Z #11 24.95 
+2025-12-25T08:17:12Z #11 24.95 70 packages are looking for funding
+2025-12-25T08:17:12Z #11 24.95   run `npm fund` for details
+2025-12-25T08:17:12Z #11 24.95 
+2025-12-25T08:17:12Z #11 24.95 found 0 vulnerabilities
+2025-12-25T08:17:12Z #11 24.95 npm notice
+2025-12-25T08:17:12Z #11 24.95 npm notice New major version of npm available! 10.8.2 -> 11.7.0
+2025-12-25T08:17:12Z #11 24.95 npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.7.0
+2025-12-25T08:17:12Z #11 24.95 npm notice To update run: npm install -g npm@11.7.0
+2025-12-25T08:17:12Z #11 24.95 npm notice
+2025-12-25T08:17:14Z #11 DONE 27.6s
+2025-12-25T08:17:15Z 
+2025-12-25T08:17:15Z #12 [6/9] COPY . .
+2025-12-25T08:17:15Z #12 DONE 0.1s
+2025-12-25T08:17:15Z 
+2025-12-25T08:17:15Z #13 [7/9] RUN npm run build
+2025-12-25T08:17:15Z #13 0.720 
+2025-12-25T08:17:15Z #13 0.720 > rest-express@1.0.0 build
+2025-12-25T08:17:15Z #13 0.720 > tsx script/build.ts
+2025-12-25T08:17:15Z #13 0.720 
+2025-12-25T08:17:18Z #13 3.196 building client...
+2025-12-25T08:17:18Z #13 3.379 vite v7.3.0 building client environment for production...
+2025-12-25T08:17:19Z #13 4.901 transforming...
+2025-12-25T08:17:23Z #13 8.583 
+2025-12-25T08:17:23Z #13 8.583 A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+2025-12-25T08:17:33Z #13 18.42 ✓ 1677 modules transformed.
+2025-12-25T08:17:34Z #13 19.20 rendering chunks...
+2025-12-25T08:17:34Z #13 19.22 computing gzip size...
+2025-12-25T08:17:34Z #13 19.25 ../dist/public/index.html                   2.01 kB │ gzip:  0.77 kB
+2025-12-25T08:17:34Z #13 19.25 ../dist/public/assets/index-n-65nTRz.css   70.11 kB │ gzip: 11.33 kB
+2025-12-25T08:17:34Z #13 19.25 ../dist/public/assets/index-BsHY9kSK.js   309.58 kB │ gzip: 99.15 kB
+2025-12-25T08:17:34Z #13 19.25 ✓ built in 15.35s
+2025-12-25T08:17:34Z #13 19.26 building server...
+2025-12-25T08:17:34Z #13 19.63 
+2025-12-25T08:17:34Z #13 19.63   dist/index.cjs  985.7kb
+2025-12-25T08:17:34Z #13 19.63 
+2025-12-25T08:17:34Z #13 19.63 ⚡ Done in 363ms
+2025-12-25T08:17:34Z #13 DONE 19.8s
+2025-12-25T08:17:34Z 
+2025-12-25T08:17:34Z #14 [8/9] RUN npm prune --production
+2025-12-25T08:17:35Z #14 0.643 npm warn config production Use `--omit=dev` instead.
+2025-12-25T08:17:39Z #14 4.561 
+2025-12-25T08:17:39Z #14 4.561 up to date, audited 416 packages in 4s
+2025-12-25T08:17:39Z #14 4.561 
+2025-12-25T08:17:39Z #14 4.562 55 packages are looking for funding
+2025-12-25T08:17:39Z #14 4.562   run `npm fund` for details
+2025-12-25T08:17:39Z #14 4.565 
+2025-12-25T08:17:39Z #14 4.565 found 0 vulnerabilities
+2025-12-25T08:17:39Z #14 DONE 4.7s
+2025-12-25T08:17:39Z 
+2025-12-25T08:17:39Z #15 [9/9] RUN mkdir -p /app/data && chmod -R 755 /app/data
+2025-12-25T08:17:40Z #15 DONE 0.6s
+2025-12-25T08:17:49Z 
+2025-12-25T08:17:49Z #16 exporting to image
+2025-12-25T08:17:49Z #16 exporting layers done
+2025-12-25T08:17:49Z #16 writing image sha256:d290aeb979c0376b7b48451c4fb50bfebbdde5f2a0ae21a2f61f1245aefbd958 done
+2025-12-25T08:17:49Z #16 naming to docker.io/muaeabudhabi/filetrans:latest done
+2025-12-25T08:17:49Z #16 DONE 0.0s
+2025-12-25T08:17:49Z 
+2025-12-25T08:17:49Z #17 exporting cache
+2025-12-25T08:17:49Z #17 preparing build cache for export done
+2025-12-25T08:17:49Z #17 DONE 0.0s
+2025-12-25T08:17:49Z Pushing index.docker.io/muaeabudhabi/filetrans:latest...
+2025-12-25T08:18:48Z Done!
+2025-12-25T08:18:48Z Build finished
