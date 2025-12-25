@@ -1,0 +1,27 @@
+
+npm error path /app
+npm error command failed
+npm error signal SIGTERM
+npm error command sh -c NODE_ENV=production node dist/index.cjs
+npm error A complete log of this run can be found in: /root/.npm/_logs/2025-12-25T07_59_44_035Z-debug-0.log
+
+> rest-express@1.0.0 start
+> NODE_ENV=production node dist/index.cjs
+
+11:59:44 AM [express] serving on port 4321
+12:06:54 PM [express] POST /api/convert 422 in 2066ms :: {"message":"Command failed: convert \"/app/data/uploads/a0bf4c7a-c037-46ad-a241-c3c145dd0a49-IMG_6614.gif\" -coalesce -gravity center -background white -extent 180x180 -layers optimize \"/app/data/uploads/a0bf4c7a-c037-46ad-a241-c3c145dd0a49-IMG_6614.gif.dim.gif\"\n/bin/sh: convert: not found\n"}
+12:07:39 PM [express] POST /api/convert 422 in 753ms :: {"message":"Command failed: convert \"/app/data/uploads/ab83b16a-8ef5-49a5-8f92-cc578b1a9ecc-IMG_6615.gif\" -coalesce -gravity center -background white -extent 180x180 -layers optimize \"/app/data/uploads/ab83b16a-8ef5-49a5-8f92-cc578b1a9ecc-IMG_6615.gif.dim.gif\"\n/bin/sh: convert: not found\n"}
+12:08:03 PM [express] GET /api/files 304 in 1ms :: []
+12:11:40 PM [express] POST /api/convert 422 in 2668ms :: {"message":"Command failed: convert \"/app/data/uploads/e4d28638-450e-49a9-9099-b527dc34fb09-IMG_6607.GIF\" -coalesce -gravity center -background white -extent 180x180 -layers optimize \"/app/data/uploads/e4d28638-450e-49a9-9099-b527dc34fb09-IMG_6607.GIF.dim.gif\"\n/bin/sh: convert: not found\n"}
+12:12:31 PM [express] POST /api/convert 422 in 1800ms :: {"message":"Command failed: convert \"/app/data/uploads/e6d469b8-25d0-4379-b10e-8946fd11c212-IMG_6608.GIF\" -coalesce -gravity center -background white -extent 180x180 -layers optimize \"/app/data/uploads/e6d469b8-25d0-4379-b10e-8946fd11c212-IMG_6608.GIF.dim.gif\"\n/bin/sh: convert: not found\n"}
+12:12:45 PM [express] POST /api/convert 422 in 528ms :: {"message":"Command failed: convert \"/app/data/uploads/63375f2e-09d8-44eb-9cdc-9bc2f0b3c538-IMG_6614.GIF\" -coalesce -gravity center -background white -extent 180x180 -layers optimize \"/app/data/uploads/63375f2e-09d8-44eb-9cdc-9bc2f0b3c538-IMG_6614.GIF.dim.gif\"\n/bin/sh: convert: not found\n"}
+12:12:59 PM [express] POST /api/convert 422 in 531ms :: {"message":"Command failed: convert \"/app/data/uploads/3e122736-b728-4f60-b94b-565f43a72956-IMG_6611.GIF\" -coalesce -gravity center -background white -extent 180x180 -layers optimize \"/app/data/uploads/3e122736-b728-4f60-b94b-565f43a72956-IMG_6611.GIF.dim.gif\"\n/bin/sh: convert: not found\n"}
+12:13:23 PM [express] POST /api/convert 422 in 360ms :: {"message":"Command failed: convert \"/app/data/uploads/62cc7df5-7573-4b81-a495-16a1335d7547-IMG_6610.GIF\" -coalesce -gravity center -background white -extent 180x180 -layers optimize \"/app/data/uploads/62cc7df5-7573-4b81-a495-16a1335d7547-IMG_6610.GIF.dim.gif\"\n/bin/sh: convert: not found\n"}
+
+> rest-express@1.0.0 start
+> NODE_ENV=production node dist/index.cjs
+
+12:24:00 PM [express] serving on port 4321
+12:24:42 PM [express] POST /api/convert 422 in 1222ms :: {"message":"Command failed: convert \"/app/data/uploads/adb938f0-0582-4e1a-904a-835aa6603f52-IMG_6607.GIF\" -coalesce -gravity center -background white -extent 180x180 -layers optimize \"/app/data/uploads/adb938f0-0582-4e1a-904a-835aa6603f52-IMG_6607.GIF.dim.gif\"\n/bin/sh: convert: not found\n"}
+12:25:19 PM [express] POST /api/convert 422 in 1085ms :: {"message":"Command failed: convert \"/app/data/uploads/b7c5e59b-c6f8-4340-8816-87d85115cc23-IMG_6607.GIF\" -coalesce -gravity center -background white -extent 180x180 -layers optimize \"/app/data/uploads/b7c5e59b-c6f8-4340-8816-87d85115cc23-IMG_6607.GIF.dim.gif\"\n/bin/sh: convert: not found\n"}
+
