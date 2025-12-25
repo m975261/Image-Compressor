@@ -524,12 +524,16 @@ export function TempDrive({ shareToken }: TempDriveProps) {
 
   const handleUpdateShare = () => {
     if (!editingShare) return;
+    const updateData: { label: string; active: boolean; password?: string | null } = {
+      label: shareLabel,
+      active: editingShare.active
+    };
+    if (sharePassword) {
+      updateData.password = sharePassword;
+    }
     updateShareMutation.mutate({
       id: editingShare.id,
-      data: {
-        label: shareLabel,
-        active: editingShare.active
-      }
+      data: updateData
     });
   };
 
