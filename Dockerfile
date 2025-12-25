@@ -1,6 +1,6 @@
 FROM node:20-alpine
 
-RUN apk add --no-cache gifsicle ffmpeg
+RUN apk add --no-cache gifsicle ffmpeg imagemagick
 
 WORKDIR /app
 
