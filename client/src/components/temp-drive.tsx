@@ -100,6 +100,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
   const [sharePassword, setSharePassword] = useState("");
   const [shareExpiry, setShareExpiry] = useState("60");
   const [generatedShareUrl, setGeneratedShareUrl] = useState<string | null>(null);
+  const [clearPassword, setClearPassword] = useState(false);
   
   const [selectedShareId, setSelectedShareId] = useState<string | null>(null);
   const [viewingShareFiles, setViewingShareFiles] = useState(false);
@@ -109,6 +110,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
   const [deleteShareId, setDeleteShareId] = useState<string | null>(null);
 
   const [shareQuota, setShareQuota] = useState<ShareQuota | null>(null);
+  const [shareDeleted, setShareDeleted] = useState(false);
 
   const getAuthHeaders = useCallback((): Record<string, string> => {
     return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {};
@@ -191,11 +193,11 @@ export function TempDrive({ shareToken }: TempDriveProps) {
         .then(res => res.json())
         .then(data => {
           if (!data.valid) {
-            toast({ title: "Share link invalid or expired", variant: "destructive" });
+            setShareDeleted(true);
           }
         });
     }
-  }, [shareToken, toast]);
+  }, [shareToken]);
 
   const loginMutation = useMutation({
     mutationFn: async (data: { password: string; otp?: string }) => {
@@ -530,6 +532,8 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     };
     if (sharePassword) {
       updateData.password = sharePassword;
+    } else if (clearPassword) {
+      updateData.password = null;
     }
     updateShareMutation.mutate({
       id: editingShare.id,
@@ -542,6 +546,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     setShareLabel("");
     setSharePassword("");
     setShareExpiry("60");
+    setClearPassword(false);
     setGeneratedShareUrl(null);
     setShareDialogOpen(true);
   };
@@ -550,6 +555,7 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     setEditingShare(share);
     setShareLabel(share.label);
     setSharePassword("");
+    setClearPassword(false);
     setGeneratedShareUrl(null);
     setShareDialogOpen(true);
   };
@@ -560,9 +566,10 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     setAdminTab("files");
   };
 
-  const backToAdminFiles = () => {
+  const backToShares = () => {
     setViewingShareFiles(false);
     setSelectedShareId(null);
+    setAdminTab("shares");
   };
 
   const copyShareUrl = (url?: string) => {
@@ -599,6 +606,27 @@ export function TempDrive({ shareToken }: TempDriveProps) {
     if (hours > 0) return `${hours}h ${minutes}m`;
     return `${minutes}m`;
   };
+
+  if (shareToken && shareDeleted) {
+    return (
+      <Card className="max-w-md mx-auto">
+        <CardHeader className="text-center">
+          <div className="mx-auto w-12 h-12 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
+            <AlertTriangle className="w-6 h-6 text-destructive" />
+          </div>
+          <CardTitle>This Drive has been deleted</CardTitle>
+          <CardDescription>
+            The shared drive you are trying to access no longer exists or has expired.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="text-center">
+          <p className="text-sm text-muted-foreground">
+            Please contact the person who shared this link with you for a new one.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (authState === "unauthenticated" || authState === "otp_required") {
     return (
@@ -752,10 +780,10 @@ export function TempDrive({ shareToken }: TempDriveProps) {
             <Button
               variant="outline"
               size="sm"
-              onClick={backToAdminFiles}
-              data-testid="button-back-to-admin"
+              onClick={backToShares}
+              data-testid="button-back-to-shares"
             >
-              Back to Admin Files
+              Back to Shares
             </Button>
           )}
           <Button
@@ -1192,14 +1220,63 @@ export function TempDrive({ shareToken }: TempDriveProps) {
               )}
 
               {editingShare && (
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={editingShare.active}
-                    onCheckedChange={(checked) => setEditingShare({ ...editingShare, active: checked })}
-                    data-testid="switch-share-active"
-                  />
-                  <Label>Share Active</Label>
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-share-password">Change Password</Label>
+                    <Input
+                      id="edit-share-password"
+                      type="password"
+                      value={sharePassword}
+                      onChange={(e) => setSharePassword(e.target.value)}
+                      placeholder={editingShare.passwordHash ? "Enter new password or leave blank" : "Set a password (optional)"}
+                      data-testid="input-edit-share-password"
+                    />
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {editingShare.passwordHash && !clearPassword ? (
+                        <>
+                          <span>Currently password protected.</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-0 text-xs text-primary underline-offset-4 hover:underline"
+                            onClick={() => {
+                              setSharePassword("");
+                              setClearPassword(true);
+                            }}
+                            data-testid="button-clear-password"
+                          >
+                            Remove password protection
+                          </Button>
+                        </>
+                      ) : clearPassword ? (
+                        <>
+                          <span>Password will be removed.</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto p-0 text-xs text-primary underline-offset-4 hover:underline"
+                            onClick={() => setClearPassword(false)}
+                            data-testid="button-undo-clear-password"
+                          >
+                            Undo
+                          </Button>
+                        </>
+                      ) : (
+                        <span>No password set. Add one above to protect this share.</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={editingShare.active}
+                      onCheckedChange={(checked) => setEditingShare({ ...editingShare, active: checked })}
+                      data-testid="switch-share-active"
+                    />
+                    <Label>Share Active</Label>
+                  </div>
+                </>
               )}
 
               <DialogFooter>
