@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import path from "path";
@@ -8,8 +8,28 @@ import { promisify } from "util";
 import { randomUUID } from "crypto";
 import cron from "node-cron";
 import { storage } from "./storage";
-import { conversionRequestSchema, fileUploadRequestSchema } from "@shared/schema";
-import { UPLOAD_DIR, CONVERTED_DIR, SHARED_DIR } from "./config";
+import { 
+  conversionRequestSchema, 
+  fileUploadRequestSchema,
+  adminLoginRequestSchema,
+  shareCreateRequestSchema,
+  shareAccessRequestSchema,
+  type TempDriveFile,
+  type TempDriveSession
+} from "@shared/schema";
+import { UPLOAD_DIR, CONVERTED_DIR, SHARED_DIR, TEMP_DRIVE_DIR, getStorageInfo, isStorageNearFull } from "./config";
+import {
+  verifyAdminPassword,
+  verifyPassword,
+  hashPassword,
+  generateTotpSecret,
+  generateTotpQRCode,
+  verifyTotp,
+  generateSessionToken,
+  generateShareToken,
+  getSessionExpiryDate,
+  isShareExpired
+} from "./temp-drive-auth";
 
 const execAsync = promisify(exec);
 
@@ -549,6 +569,457 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Delete failed" });
+    }
+  });
+
+  // ============== TEMP DRIVE ROUTES ==============
+
+  const tempDriveUpload = multer({
+    storage: multer.diskStorage({
+      destination: TEMP_DRIVE_DIR,
+      filename: (req, file, cb) => {
+        const uniqueName = `${randomUUID()}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+        cb(null, uniqueName);
+      }
+    })
+  });
+
+  async function validateTempDriveSession(req: Request): Promise<{ valid: boolean; session: TempDriveSession | null; isAdmin: boolean }> {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return { valid: false, session: null, isAdmin: false };
+    }
+    
+    const token = authHeader.substring(7);
+    const session = await storage.getTempDriveSession(token);
+    
+    if (!session) {
+      return { valid: false, session: null, isAdmin: false };
+    }
+
+    if (session.type === "share") {
+      const share = await storage.getTempDriveShare();
+      if (!share || !share.active || isShareExpired(share.expiresAt)) {
+        await storage.deleteTempDriveSession(token);
+        return { valid: false, session: null, isAdmin: false };
+      }
+    }
+    
+    return { valid: true, session, isAdmin: session.type === "admin" };
+  }
+
+  app.get("/api/temp-drive/status", async (req, res) => {
+    try {
+      const admin = await storage.getTempDriveAdmin();
+      const share = await storage.getTempDriveShare();
+      
+      let shareActive = false;
+      if (share && share.active) {
+        if (isShareExpired(share.expiresAt)) {
+          await storage.deleteTempDriveShare();
+        } else {
+          shareActive = true;
+        }
+      }
+
+      res.json({
+        totpSetupComplete: admin?.totpSetupComplete || false,
+        shareActive,
+        shareExpiresAt: shareActive && share ? share.expiresAt : null
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to get status" });
+    }
+  });
+
+  app.post("/api/temp-drive/admin/login", async (req, res) => {
+    try {
+      const parsed = adminLoginRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request" });
+      }
+
+      const { password, otp } = parsed.data;
+
+      const isValidPassword = await verifyAdminPassword(password);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Invalid password" });
+      }
+
+      let admin = await storage.getTempDriveAdmin();
+
+      if (!admin) {
+        const totpSecret = generateTotpSecret();
+        admin = {
+          passwordHash: await hashPassword(password),
+          totpSecret,
+          totpSetupComplete: false,
+          createdAt: new Date().toISOString()
+        };
+        await storage.saveTempDriveAdmin(admin);
+      }
+
+      if (!admin.totpSetupComplete) {
+        const qrCode = await generateTotpQRCode(admin.totpSecret!);
+        return res.json({
+          requiresTotpSetup: true,
+          qrCode,
+          secret: admin.totpSecret
+        });
+      }
+
+      if (!otp) {
+        return res.status(400).json({ message: "OTP required", requiresOtp: true });
+      }
+
+      if (!admin.totpSecret || !verifyTotp(admin.totpSecret, otp)) {
+        return res.status(401).json({ message: "Invalid OTP" });
+      }
+
+      const sessionToken = generateSessionToken();
+      await storage.saveTempDriveSession({
+        token: sessionToken,
+        type: "admin",
+        shareId: null,
+        expiresAt: getSessionExpiryDate().toISOString(),
+        createdAt: new Date().toISOString()
+      });
+
+      res.json({ token: sessionToken, type: "admin" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Login failed" });
+    }
+  });
+
+  app.post("/api/temp-drive/admin/setup-totp", async (req, res) => {
+    try {
+      const { password, otp } = req.body;
+
+      const isValidPassword = await verifyAdminPassword(password);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Invalid password" });
+      }
+
+      const admin = await storage.getTempDriveAdmin();
+      if (!admin || !admin.totpSecret) {
+        return res.status(400).json({ message: "TOTP not initialized" });
+      }
+
+      if (!verifyTotp(admin.totpSecret, otp)) {
+        return res.status(401).json({ message: "Invalid OTP" });
+      }
+
+      admin.totpSetupComplete = true;
+      await storage.saveTempDriveAdmin(admin);
+
+      const sessionToken = generateSessionToken();
+      await storage.saveTempDriveSession({
+        token: sessionToken,
+        type: "admin",
+        shareId: null,
+        expiresAt: getSessionExpiryDate().toISOString(),
+        createdAt: new Date().toISOString()
+      });
+
+      res.json({ token: sessionToken, type: "admin" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "TOTP setup failed" });
+    }
+  });
+
+  app.post("/api/temp-drive/admin/logout", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        const token = authHeader.substring(7);
+        await storage.deleteTempDriveSession(token);
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Logout failed" });
+    }
+  });
+
+  app.post("/api/temp-drive/share/create", async (req, res) => {
+    try {
+      const { valid, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !isAdmin) {
+        return res.status(401).json({ message: "Admin authentication required" });
+      }
+
+      const parsed = shareCreateRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request" });
+      }
+
+      const { password, expiryMinutes } = parsed.data;
+      const passwordHash = await hashPassword(password);
+      const shareToken = generateShareToken();
+      
+      const expiresAt = expiryMinutes 
+        ? new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString()
+        : null;
+
+      const share = {
+        id: randomUUID(),
+        token: shareToken,
+        passwordHash,
+        expiresAt,
+        createdAt: new Date().toISOString(),
+        active: true
+      };
+
+      await storage.saveTempDriveShare(share);
+
+      res.json({
+        shareUrl: `/temp-drive/share/${shareToken}`,
+        token: shareToken,
+        expiresAt
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to create share" });
+    }
+  });
+
+  app.post("/api/temp-drive/share/disable", async (req, res) => {
+    try {
+      const { valid, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !isAdmin) {
+        return res.status(401).json({ message: "Admin authentication required" });
+      }
+
+      await storage.deleteTempDriveShare();
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to disable share" });
+    }
+  });
+
+  app.post("/api/temp-drive/share/access/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const parsed = shareAccessRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Password required" });
+      }
+
+      const share = await storage.getTempDriveShare();
+      if (!share || share.token !== token || !share.active) {
+        return res.status(404).json({ message: "Share not found or expired" });
+      }
+
+      if (isShareExpired(share.expiresAt)) {
+        await storage.deleteTempDriveShare();
+        return res.status(410).json({ message: "Share has expired" });
+      }
+
+      const isValidPassword = await verifyPassword(parsed.data.password, share.passwordHash);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Invalid password" });
+      }
+
+      const sessionToken = generateSessionToken();
+      await storage.saveTempDriveSession({
+        token: sessionToken,
+        type: "share",
+        shareId: share.id,
+        expiresAt: getSessionExpiryDate().toISOString(),
+        createdAt: new Date().toISOString()
+      });
+
+      res.json({ token: sessionToken, type: "share" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Access failed" });
+    }
+  });
+
+  app.get("/api/temp-drive/share/validate/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const share = await storage.getTempDriveShare();
+      
+      if (!share || share.token !== token || !share.active) {
+        return res.json({ valid: false });
+      }
+
+      if (isShareExpired(share.expiresAt)) {
+        await storage.deleteTempDriveShare();
+        return res.json({ valid: false });
+      }
+
+      res.json({ valid: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Validation failed" });
+    }
+  });
+
+  app.get("/api/temp-drive/files", async (req, res) => {
+    try {
+      const { valid } = await validateTempDriveSession(req);
+      if (!valid) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const files = await storage.getTempDriveFiles();
+      res.json(files);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to get files" });
+    }
+  });
+
+  app.post("/api/temp-drive/files/upload", tempDriveUpload.single("file"), async (req, res) => {
+    try {
+      const { valid, session } = await validateTempDriveSession(req);
+      if (!valid || !session) {
+        if (req.file) fs.unlinkSync(req.file.path);
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      if (isStorageNearFull()) {
+        if (req.file) fs.unlinkSync(req.file.path);
+        return res.status(507).json({ message: "Storage is 95% full. Cannot upload more files." });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const fileId = randomUUID();
+      const ext = path.extname(req.file.originalname).replace(/[^a-zA-Z0-9.]/g, '') || '';
+      const newPath = path.join(TEMP_DRIVE_DIR, fileId + ext);
+      fs.renameSync(req.file.path, newPath);
+
+      const tempDriveFile: TempDriveFile = {
+        id: fileId,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimeType: req.file.mimetype,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: session.type
+      };
+
+      await storage.saveTempDriveFile(tempDriveFile);
+      res.json(tempDriveFile);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Upload failed" });
+    }
+  });
+
+  app.get("/api/temp-drive/files/download/:id", async (req, res) => {
+    try {
+      const { valid } = await validateTempDriveSession(req);
+      if (!valid) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const fileId = req.params.id;
+      if (!isValidUUID(fileId)) {
+        return res.status(400).json({ message: "Invalid file identifier" });
+      }
+
+      const files = await storage.getTempDriveFiles();
+      const file = files.find(f => f.id === fileId);
+      
+      if (!file) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      const ext = path.extname(file.fileName).replace(/[^a-zA-Z0-9.]/g, '') || '';
+      const filePath = path.join(TEMP_DRIVE_DIR, fileId + ext);
+      
+      if (!isPathWithinDirectory(filePath, TEMP_DRIVE_DIR) || !fs.existsSync(filePath)) {
+        return res.status(404).json({ message: "File not found on disk" });
+      }
+
+      res.setHeader("Content-Type", file.mimeType);
+      res.setHeader("Content-Disposition", `attachment; filename="${file.fileName}"`);
+      res.sendFile(filePath);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Download failed" });
+    }
+  });
+
+  app.delete("/api/temp-drive/files/:id", async (req, res) => {
+    try {
+      const { valid, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !isAdmin) {
+        return res.status(401).json({ message: "Admin authentication required" });
+      }
+
+      const fileId = req.params.id;
+      if (!isValidUUID(fileId)) {
+        return res.status(400).json({ message: "Invalid file identifier" });
+      }
+
+      const files = await storage.getTempDriveFiles();
+      const file = files.find(f => f.id === fileId);
+      
+      if (!file) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      const ext = path.extname(file.fileName).replace(/[^a-zA-Z0-9.]/g, '') || '';
+      const filePath = path.join(TEMP_DRIVE_DIR, fileId + ext);
+      
+      if (fs.existsSync(filePath) && isPathWithinDirectory(filePath, TEMP_DRIVE_DIR)) {
+        fs.unlinkSync(filePath);
+      }
+
+      await storage.deleteTempDriveFile(fileId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Delete failed" });
+    }
+  });
+
+  app.delete("/api/temp-drive/files", async (req, res) => {
+    try {
+      const { valid, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !isAdmin) {
+        return res.status(401).json({ message: "Admin authentication required" });
+      }
+
+      const files = await storage.getTempDriveFiles();
+      for (const file of files) {
+        const ext = path.extname(file.fileName).replace(/[^a-zA-Z0-9.]/g, '') || '';
+        const filePath = path.join(TEMP_DRIVE_DIR, file.id + ext);
+        if (fs.existsSync(filePath) && isPathWithinDirectory(filePath, TEMP_DRIVE_DIR)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+
+      await storage.deleteAllTempDriveFiles();
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Delete all failed" });
+    }
+  });
+
+  app.get("/api/temp-drive/storage", async (req, res) => {
+    try {
+      const info = getStorageInfo();
+      res.json({
+        usedBytes: info.usedBytes,
+        totalBytes: info.totalBytes,
+        usedPercentage: Math.round(info.usedPercentage * 100) / 100,
+        warning: info.usedPercentage >= 95
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to get storage info" });
+    }
+  });
+
+  cron.schedule("*/5 * * * *", async () => {
+    try {
+      await storage.cleanExpiredSessions();
+      
+      const share = await storage.getTempDriveShare();
+      if (share && share.active && isShareExpired(share.expiresAt)) {
+        await storage.deleteTempDriveShare();
+        console.log("Expired share cleaned up");
+      }
+    } catch (error) {
+      console.error("Error cleaning up temp drive:", error);
     }
   });
 
