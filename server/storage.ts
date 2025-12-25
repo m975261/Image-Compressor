@@ -7,7 +7,10 @@ import type {
   TempDriveAdmin, 
   TempDriveFile, 
   TempDriveShare, 
-  TempDriveSession 
+  TempDriveShareFile,
+  TempDriveSession,
+  TempDriveLoginAttempt,
+  TempDriveBlockedIp
 } from "@shared/schema";
 
 const DATA_PATH = process.env.DATA_PATH || path.join(process.cwd(), "data");
@@ -19,6 +22,9 @@ const TEMP_DRIVE_ADMIN_PATH = path.join(METADATA_DIR, "temp_drive_admin.json");
 const TEMP_DRIVE_FILES_PATH = path.join(METADATA_DIR, "temp_drive_files.json");
 const TEMP_DRIVE_SHARES_PATH = path.join(METADATA_DIR, "temp_drive_shares.json");
 const TEMP_DRIVE_SESSIONS_PATH = path.join(METADATA_DIR, "temp_drive_sessions.json");
+const TEMP_DRIVE_SHARE_FILES_PATH = path.join(METADATA_DIR, "temp_drive_share_files.json");
+const TEMP_DRIVE_LOGIN_ATTEMPTS_PATH = path.join(METADATA_DIR, "temp_drive_login_attempts.json");
+const TEMP_DRIVE_BLOCKED_IPS_PATH = path.join(METADATA_DIR, "temp_drive_blocked_ips.json");
 
 export interface IStorage {
   saveUploadedFile(file: Omit<UploadedFile, "id">, customId?: string): Promise<UploadedFile>;
@@ -43,6 +49,21 @@ export interface IStorage {
   getTempDriveShare(): Promise<TempDriveShare | null>;
   saveTempDriveShare(share: TempDriveShare): Promise<void>;
   deleteTempDriveShare(): Promise<void>;
+  
+  getShareFiles(shareId: string): Promise<TempDriveShareFile[]>;
+  saveShareFile(file: TempDriveShareFile): Promise<TempDriveShareFile>;
+  deleteShareFile(id: string): Promise<boolean>;
+  deleteAllShareFiles(shareId: string): Promise<void>;
+  
+  getLoginAttempts(ip: string): Promise<TempDriveLoginAttempt[]>;
+  saveLoginAttempt(attempt: TempDriveLoginAttempt): Promise<void>;
+  cleanOldLoginAttempts(): Promise<void>;
+  
+  getBlockedIps(): Promise<TempDriveBlockedIp[]>;
+  isIpBlocked(ip: string): Promise<boolean>;
+  blockIp(blockedIp: TempDriveBlockedIp): Promise<void>;
+  unblockIp(ip: string): Promise<void>;
+  cleanExpiredBlocks(): Promise<void>;
   
   getTempDriveSession(token: string): Promise<TempDriveSession | null>;
   saveTempDriveSession(session: TempDriveSession): Promise<void>;
@@ -343,6 +364,161 @@ export class PersistentStorage implements IStorage {
       fs.writeFileSync(TEMP_DRIVE_SESSIONS_PATH, JSON.stringify(data, null, 2));
     } catch (error) {
       console.error("Error saving sessions:", error);
+    }
+  }
+
+  async getShareFiles(shareId: string): Promise<TempDriveShareFile[]> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_SHARE_FILES_PATH)) {
+        const data: TempDriveShareFile[] = JSON.parse(fs.readFileSync(TEMP_DRIVE_SHARE_FILES_PATH, "utf-8"));
+        return data.filter(f => f.shareId === shareId);
+      }
+    } catch (error) {
+      console.error("Error loading share files:", error);
+    }
+    return [];
+  }
+
+  async saveShareFile(file: TempDriveShareFile): Promise<TempDriveShareFile> {
+    let files: TempDriveShareFile[] = [];
+    try {
+      if (fs.existsSync(TEMP_DRIVE_SHARE_FILES_PATH)) {
+        files = JSON.parse(fs.readFileSync(TEMP_DRIVE_SHARE_FILES_PATH, "utf-8"));
+      }
+    } catch (error) {
+      console.error("Error loading share files:", error);
+    }
+    files.push(file);
+    try {
+      fs.writeFileSync(TEMP_DRIVE_SHARE_FILES_PATH, JSON.stringify(files, null, 2));
+    } catch (error) {
+      console.error("Error saving share files:", error);
+    }
+    return file;
+  }
+
+  async deleteShareFile(id: string): Promise<boolean> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_SHARE_FILES_PATH)) {
+        const files: TempDriveShareFile[] = JSON.parse(fs.readFileSync(TEMP_DRIVE_SHARE_FILES_PATH, "utf-8"));
+        const filtered = files.filter(f => f.id !== id);
+        if (filtered.length < files.length) {
+          fs.writeFileSync(TEMP_DRIVE_SHARE_FILES_PATH, JSON.stringify(filtered, null, 2));
+          return true;
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting share file:", error);
+    }
+    return false;
+  }
+
+  async deleteAllShareFiles(shareId: string): Promise<void> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_SHARE_FILES_PATH)) {
+        const files: TempDriveShareFile[] = JSON.parse(fs.readFileSync(TEMP_DRIVE_SHARE_FILES_PATH, "utf-8"));
+        const filtered = files.filter(f => f.shareId !== shareId);
+        fs.writeFileSync(TEMP_DRIVE_SHARE_FILES_PATH, JSON.stringify(filtered, null, 2));
+      }
+    } catch (error) {
+      console.error("Error deleting share files:", error);
+    }
+  }
+
+  async getLoginAttempts(ip: string): Promise<TempDriveLoginAttempt[]> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_LOGIN_ATTEMPTS_PATH)) {
+        const data: TempDriveLoginAttempt[] = JSON.parse(fs.readFileSync(TEMP_DRIVE_LOGIN_ATTEMPTS_PATH, "utf-8"));
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        return data.filter(a => a.ip === ip && a.timestamp > oneHourAgo && !a.success);
+      }
+    } catch (error) {
+      console.error("Error loading login attempts:", error);
+    }
+    return [];
+  }
+
+  async saveLoginAttempt(attempt: TempDriveLoginAttempt): Promise<void> {
+    let attempts: TempDriveLoginAttempt[] = [];
+    try {
+      if (fs.existsSync(TEMP_DRIVE_LOGIN_ATTEMPTS_PATH)) {
+        attempts = JSON.parse(fs.readFileSync(TEMP_DRIVE_LOGIN_ATTEMPTS_PATH, "utf-8"));
+      }
+    } catch (error) {
+      console.error("Error loading login attempts:", error);
+    }
+    attempts.push(attempt);
+    try {
+      fs.writeFileSync(TEMP_DRIVE_LOGIN_ATTEMPTS_PATH, JSON.stringify(attempts, null, 2));
+    } catch (error) {
+      console.error("Error saving login attempt:", error);
+    }
+  }
+
+  async cleanOldLoginAttempts(): Promise<void> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_LOGIN_ATTEMPTS_PATH)) {
+        const attempts: TempDriveLoginAttempt[] = JSON.parse(fs.readFileSync(TEMP_DRIVE_LOGIN_ATTEMPTS_PATH, "utf-8"));
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const filtered = attempts.filter(a => a.timestamp > oneHourAgo);
+        fs.writeFileSync(TEMP_DRIVE_LOGIN_ATTEMPTS_PATH, JSON.stringify(filtered, null, 2));
+      }
+    } catch (error) {
+      console.error("Error cleaning login attempts:", error);
+    }
+  }
+
+  async getBlockedIps(): Promise<TempDriveBlockedIp[]> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_BLOCKED_IPS_PATH)) {
+        const data: TempDriveBlockedIp[] = JSON.parse(fs.readFileSync(TEMP_DRIVE_BLOCKED_IPS_PATH, "utf-8"));
+        return data;
+      }
+    } catch (error) {
+      console.error("Error loading blocked IPs:", error);
+    }
+    return [];
+  }
+
+  async isIpBlocked(ip: string): Promise<boolean> {
+    const blockedIps = await this.getBlockedIps();
+    const now = new Date().toISOString();
+    return blockedIps.some(b => b.ip === ip && b.expiresAt > now);
+  }
+
+  async blockIp(blockedIp: TempDriveBlockedIp): Promise<void> {
+    let blocked = await this.getBlockedIps();
+    blocked = blocked.filter(b => b.ip !== blockedIp.ip);
+    blocked.push(blockedIp);
+    try {
+      fs.writeFileSync(TEMP_DRIVE_BLOCKED_IPS_PATH, JSON.stringify(blocked, null, 2));
+    } catch (error) {
+      console.error("Error blocking IP:", error);
+    }
+  }
+
+  async unblockIp(ip: string): Promise<void> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_BLOCKED_IPS_PATH)) {
+        const blocked: TempDriveBlockedIp[] = JSON.parse(fs.readFileSync(TEMP_DRIVE_BLOCKED_IPS_PATH, "utf-8"));
+        const filtered = blocked.filter(b => b.ip !== ip);
+        fs.writeFileSync(TEMP_DRIVE_BLOCKED_IPS_PATH, JSON.stringify(filtered, null, 2));
+      }
+    } catch (error) {
+      console.error("Error unblocking IP:", error);
+    }
+  }
+
+  async cleanExpiredBlocks(): Promise<void> {
+    try {
+      if (fs.existsSync(TEMP_DRIVE_BLOCKED_IPS_PATH)) {
+        const blocked: TempDriveBlockedIp[] = JSON.parse(fs.readFileSync(TEMP_DRIVE_BLOCKED_IPS_PATH, "utf-8"));
+        const now = new Date().toISOString();
+        const filtered = blocked.filter(b => b.expiresAt > now);
+        fs.writeFileSync(TEMP_DRIVE_BLOCKED_IPS_PATH, JSON.stringify(filtered, null, 2));
+      }
+    } catch (error) {
+      console.error("Error cleaning expired blocks:", error);
     }
   }
 }
