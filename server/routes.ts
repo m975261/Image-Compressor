@@ -80,10 +80,96 @@ async function getGifInfo(filePath: string): Promise<{ width: number; height: nu
 
 interface OptimizeOptions {
   maxSizeBytes: number;
-  minWidth?: number;
-  maxWidth?: number;
-  minHeight?: number;
-  maxHeight?: number;
+  targetWidth?: number;
+  targetHeight?: number;
+}
+
+/**
+ * Process GIF to target dimensions:
+ * - If source is LARGER than target: Crop from edges, keep center
+ * - If source is SMALLER than target: Add white padding, center original
+ * - If source equals target: Pass through
+ * Preserves animation in all cases.
+ */
+async function processGifDimensions(
+  inputPath: string,
+  outputPath: string,
+  targetWidth: number,
+  targetHeight: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const info = await getGifInfo(inputPath);
+    
+    // If dimensions match, just copy
+    if (info.width === targetWidth && info.height === targetHeight) {
+      fs.copyFileSync(inputPath, outputPath);
+      return { success: true };
+    }
+    
+    const needsCrop = info.width > targetWidth || info.height > targetHeight;
+    const needsPadding = info.width < targetWidth || info.height < targetHeight;
+    
+    if (needsCrop && needsPadding) {
+      // Mixed case: one dimension larger, one smaller
+      // First resize to fit within target while maintaining aspect ratio, then pad
+      const scaleX = targetWidth / info.width;
+      const scaleY = targetHeight / info.height;
+      const scale = Math.min(scaleX, scaleY);
+      
+      const resizedWidth = Math.floor(info.width * scale);
+      const resizedHeight = Math.floor(info.height * scale);
+      
+      // Resize first, then pad
+      const tempResized = inputPath + ".resized.gif";
+      await execAsync(`gifsicle --resize ${resizedWidth}x${resizedHeight} "${inputPath}" -o "${tempResized}"`);
+      
+      // Add padding with ImageMagick (preserves animation)
+      await execAsync(`convert "${tempResized}" -coalesce -gravity center -background white -extent ${targetWidth}x${targetHeight} -layers optimize "${outputPath}"`);
+      
+      if (fs.existsSync(tempResized)) fs.unlinkSync(tempResized);
+      return { success: true };
+    }
+    
+    if (needsCrop) {
+      // Source is larger - crop from center
+      // First resize if needed to get closer to target, then crop center
+      let workingPath = inputPath;
+      let tempPath: string | null = null;
+      
+      // If much larger, resize first to reduce processing
+      if (info.width > targetWidth * 1.5 || info.height > targetHeight * 1.5) {
+        const scaleX = (targetWidth * 1.2) / info.width;
+        const scaleY = (targetHeight * 1.2) / info.height;
+        const scale = Math.max(scaleX, scaleY);
+        
+        const resizedWidth = Math.ceil(info.width * scale);
+        const resizedHeight = Math.ceil(info.height * scale);
+        
+        tempPath = inputPath + ".prescale.gif";
+        await execAsync(`gifsicle --resize ${resizedWidth}x${resizedHeight} "${inputPath}" -o "${tempPath}"`);
+        workingPath = tempPath;
+      }
+      
+      // Crop from center using ImageMagick (preserves animation)
+      await execAsync(`convert "${workingPath}" -coalesce -gravity center -crop ${targetWidth}x${targetHeight}+0+0 +repage -layers optimize "${outputPath}"`);
+      
+      if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      return { success: true };
+    }
+    
+    if (needsPadding) {
+      // Source is smaller - add white padding around it
+      // Use ImageMagick to add padding while preserving animation
+      await execAsync(`convert "${inputPath}" -coalesce -gravity center -background white -extent ${targetWidth}x${targetHeight} -layers optimize "${outputPath}"`);
+      return { success: true };
+    }
+    
+    // Fallback: just copy
+    fs.copyFileSync(inputPath, outputPath);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Dimension processing failed" };
+  }
 }
 
 async function optimizeGif(
@@ -95,57 +181,66 @@ async function optimizeGif(
     const info = await getGifInfo(inputPath);
     const currentSize = fs.statSync(inputPath).size;
     
-    const { maxSizeBytes, minWidth, maxWidth, minHeight, maxHeight } = options;
+    const { maxSizeBytes, targetWidth, targetHeight } = options;
 
-    if (minWidth && info.width < minWidth) {
-      return { success: false, error: `Image width (${info.width}px) is below minimum (${minWidth}px)` };
-    }
-    if (minHeight && info.height < minHeight) {
-      return { success: false, error: `Image height (${info.height}px) is below minimum (${minHeight}px)` };
-    }
-
-    const needsResize = (maxWidth && info.width > maxWidth) || (maxHeight && info.height > maxHeight);
+    // Determine if we need dimension processing
+    const hasTargetDimensions = targetWidth !== undefined && targetHeight !== undefined;
+    const needsDimensionProcessing = hasTargetDimensions && 
+      (info.width !== targetWidth || info.height !== targetHeight);
+    
     const needsSizeReduction = currentSize > maxSizeBytes;
 
-    if (!needsResize && !needsSizeReduction) {
+    // If no processing needed, just copy
+    if (!needsDimensionProcessing && !needsSizeReduction) {
       fs.copyFileSync(inputPath, outputPath);
       return { success: true };
     }
 
-    let targetWidth = info.width;
-    let targetHeight = info.height;
+    let workingPath = inputPath;
+    let tempDimensionPath: string | null = null;
 
-    if (needsResize) {
-      let scale = 1;
-      if (maxWidth && info.width > maxWidth) {
-        scale = Math.min(scale, maxWidth / info.width);
+    // Step 1: Process dimensions first (crop/pad)
+    if (needsDimensionProcessing && targetWidth && targetHeight) {
+      tempDimensionPath = inputPath + ".dim.gif";
+      const dimResult = await processGifDimensions(inputPath, tempDimensionPath, targetWidth, targetHeight);
+      if (!dimResult.success) {
+        if (tempDimensionPath && fs.existsSync(tempDimensionPath)) fs.unlinkSync(tempDimensionPath);
+        return dimResult;
       }
-      if (maxHeight && info.height > maxHeight) {
-        scale = Math.min(scale, maxHeight / info.height);
-      }
-      targetWidth = Math.floor(info.width * scale);
-      targetHeight = Math.floor(info.height * scale);
-      
-      if (minWidth && targetWidth < minWidth) targetWidth = minWidth;
-      if (minHeight && targetHeight < minHeight) targetHeight = minHeight;
+      workingPath = tempDimensionPath;
     }
 
-    let cmd = `gifsicle -O3 --resize ${targetWidth}x${targetHeight} --colors 256 "${inputPath}" -o "${outputPath}"`;
+    // Check if size reduction is still needed
+    let resultSize = fs.statSync(workingPath).size;
+    
+    if (resultSize <= maxSizeBytes) {
+      // Size is fine, just move/copy to output
+      if (workingPath !== inputPath) {
+        fs.renameSync(workingPath, outputPath);
+      } else {
+        fs.copyFileSync(workingPath, outputPath);
+      }
+      return { success: true };
+    }
+
+    // Step 2: Optimize with gifsicle for size reduction
+    let cmd = `gifsicle -O3 --colors 256 "${workingPath}" -o "${outputPath}"`;
     await execAsync(cmd);
-    let resultSize = fs.statSync(outputPath).size;
+    resultSize = fs.statSync(outputPath).size;
 
     if (resultSize > maxSizeBytes) {
-      cmd = `gifsicle -O3 --resize ${targetWidth}x${targetHeight} --colors 128 "${inputPath}" -o "${outputPath}"`;
+      cmd = `gifsicle -O3 --colors 128 "${workingPath}" -o "${outputPath}"`;
       await execAsync(cmd);
       resultSize = fs.statSync(outputPath).size;
     }
 
     if (resultSize > maxSizeBytes) {
-      cmd = `gifsicle -O3 --resize ${targetWidth}x${targetHeight} --colors 64 "${inputPath}" -o "${outputPath}"`;
+      cmd = `gifsicle -O3 --colors 64 "${workingPath}" -o "${outputPath}"`;
       await execAsync(cmd);
       resultSize = fs.statSync(outputPath).size;
     }
 
+    // Step 3: Frame reduction if still too large
     if (resultSize > maxSizeBytes && info.frames > 2) {
       const outputInfo = await getGifInfo(outputPath);
       let currentFrames = outputInfo.frames;
@@ -165,6 +260,11 @@ async function optimizeGif(
         resultSize = fs.statSync(outputPath).size;
         currentFrames = framesToKeep;
       }
+    }
+
+    // Cleanup temp dimension file
+    if (tempDimensionPath && fs.existsSync(tempDimensionPath)) {
+      fs.unlinkSync(tempDimensionPath);
     }
 
     if (resultSize > maxSizeBytes) {
@@ -225,19 +325,18 @@ export async function registerRoutes(
       let optimizeOptions: OptimizeOptions;
 
       if (mode === "yalla_ludo") {
+        // Yalla Ludo preset: 180x180 target dimensions, max 2MB
         optimizeOptions = {
           maxSizeBytes: 2 * 1024 * 1024,
-          minWidth: 180,
-          minHeight: 180,
+          targetWidth: 180,
+          targetHeight: 180,
         };
       } else {
         const parsed = conversionRequestSchema.safeParse({
           mode: "custom",
           maxFileSize: parseFloat(req.body.maxFileSize || "2"),
-          minWidth: req.body.minWidth ? parseInt(req.body.minWidth) : undefined,
-          maxWidth: req.body.maxWidth ? parseInt(req.body.maxWidth) : undefined,
-          minHeight: req.body.minHeight ? parseInt(req.body.minHeight) : undefined,
-          maxHeight: req.body.maxHeight ? parseInt(req.body.maxHeight) : undefined,
+          targetWidth: req.body.targetWidth ? parseInt(req.body.targetWidth) : undefined,
+          targetHeight: req.body.targetHeight ? parseInt(req.body.targetHeight) : undefined,
         });
 
         if (!parsed.success) {
@@ -247,10 +346,8 @@ export async function registerRoutes(
 
         optimizeOptions = {
           maxSizeBytes: (parsed.data.maxFileSize || 2) * 1024 * 1024,
-          minWidth: parsed.data.minWidth,
-          maxWidth: parsed.data.maxWidth,
-          minHeight: parsed.data.minHeight,
-          maxHeight: parsed.data.maxHeight,
+          targetWidth: parsed.data.targetWidth,
+          targetHeight: parsed.data.targetHeight,
         };
       }
 

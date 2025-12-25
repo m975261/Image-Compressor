@@ -1,0 +1,152 @@
+Role:
+You are a senior full-stack engineer fixing an image processing bug in a web application that converts images (including animated GIFs) into predefined and custom size presets.
+
+🎯 Problem Summary
+
+The application converts images into:
+
+A Yalla Ludo preset (fixed width/height/resolution)
+
+A custom width / height / resolution preset
+
+The current behavior is broken only for animated GIFs when:
+
+The input GIF dimensions are smaller than the target size
+
+Result:
+
+The conversion fails
+
+Or the animation breaks (frames lost, static image output, or error thrown)
+
+✅ Required Correct Behavior (Non-Negotiable)
+
+The tool must always succeed, regardless of whether the source image is:
+
+Smaller than the target
+
+Larger than the target
+
+Exactly the same size
+
+This applies to:
+
+Static images (PNG/JPG)
+
+Animated GIFs (critical)
+
+🧠 Correct Conversion Logic (WHAT TO IMPLEMENT)
+1️⃣ If the source image (or GIF) is larger than the target size
+
+Resize or crop from the outer edges
+
+Keep the center content intact
+
+Do not stretch
+
+Do not distort aspect ratio
+
+For GIFs:
+
+Apply the operation frame-by-frame
+
+Preserve frame timing and order
+
+Preserve animation fully
+
+2️⃣ If the source image (or GIF) is smaller than the target size
+
+Do NOT upscale the actual content
+
+Instead:
+
+Add padding around the image
+
+Padding color: white
+
+Center the original image
+
+For GIFs:
+
+Add padding consistently to every frame
+
+Preserve transparency where possible
+
+Preserve animation fully
+
+3️⃣ If the source image size matches the target
+
+Pass through unchanged (except metadata cleanup if needed)
+
+🧩 GIF-SPECIFIC REQUIREMENTS (VERY IMPORTANT)
+
+Animated GIFs must:
+
+Stay animated
+
+Keep all frames
+
+Keep frame delays
+
+Keep loop behavior
+
+No frame flattening
+
+No conversion to static image
+
+No re-encoding that breaks animation
+
+⚙️ Technical Expectations
+
+Detect image type (static vs animated)
+
+For GIFs:
+
+Process frames individually
+
+Reassemble frames correctly
+
+Use a safe image processing library that supports animated GIFs
+
+Avoid libraries or functions that implicitly flatten GIFs
+
+Handle edge cases gracefully (no crashes)
+
+🧪 Acceptance Criteria (How I Will Test)
+
+The fix is correct if:
+
+✅ A small animated GIF converts successfully to a larger preset with white padding
+✅ A large animated GIF converts successfully to a smaller preset via cropping
+✅ Animation remains intact in all cases
+✅ No errors occur for small images
+✅ Behavior is identical for Yalla Ludo preset and Custom preset
+✅ Static images still work as before
+
+🚫 Explicitly Avoid
+
+Stretching images to fit
+
+Scaling small GIFs up
+
+Dropping frames
+
+Converting GIF → PNG/JPG
+
+Breaking transparency
+
+Any solution that only works for static images
+
+📦 Deliverables
+
+Fix the image conversion logic
+
+Ensure animated GIF handling is correct
+
+Briefly explain what was changed and why
+
+No UI changes unless absolutely required
+
+🔁 Summary in One Line
+
+Always convert images (including animated GIFs) to the target size by cropping when larger or padding with white when smaller, without ever breaking animation.

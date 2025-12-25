@@ -26,10 +26,8 @@ export function ImageConverter() {
   const [mode, setMode] = useState<ConversionMode | null>(null);
   const [customSettings, setCustomSettings] = useState({
     maxFileSize: 2,
-    minWidth: "",
-    maxWidth: "",
-    minHeight: "",
-    maxHeight: "",
+    targetWidth: "",
+    targetHeight: "",
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const [result, setResult] = useState<ConversionResult | null>(null);
@@ -99,10 +97,8 @@ export function ImageConverter() {
 
       if (mode === "custom") {
         formData.append("maxFileSize", customSettings.maxFileSize.toString());
-        if (customSettings.minWidth) formData.append("minWidth", customSettings.minWidth.toString());
-        if (customSettings.maxWidth) formData.append("maxWidth", customSettings.maxWidth.toString());
-        if (customSettings.minHeight) formData.append("minHeight", customSettings.minHeight.toString());
-        if (customSettings.maxHeight) formData.append("maxHeight", customSettings.maxHeight.toString());
+        if (customSettings.targetWidth) formData.append("targetWidth", customSettings.targetWidth.toString());
+        if (customSettings.targetHeight) formData.append("targetHeight", customSettings.targetHeight.toString());
       }
 
       const response = await fetch("/api/convert", {
@@ -227,11 +223,11 @@ export function ImageConverter() {
                     Max 2MB
                   </Badge>
                   <Badge variant="outline" className="text-xs font-mono">
-                    Min 180x180px
+                    180x180px
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Optimized preset for Yalla Ludo avatars
+                  Optimized for Yalla Ludo avatars (pads small, crops large)
                 </p>
               </div>
             </label>
@@ -277,85 +273,47 @@ export function ImageConverter() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="minWidth" className="text-sm font-medium">
-                        Min Width (px)
+                      <Label htmlFor="targetWidth" className="text-sm font-medium">
+                        Target Width (px)
                       </Label>
                       <Input
-                        id="minWidth"
+                        id="targetWidth"
                         type="number"
                         min={1}
                         max={2000}
                         placeholder="Optional"
-                        value={customSettings.minWidth}
+                        value={customSettings.targetWidth}
                         onChange={(e) => setCustomSettings(prev => ({
                           ...prev,
-                          minWidth: e.target.value
+                          targetWidth: e.target.value
                         }))}
                         className="font-mono text-right"
-                        data-testid="input-min-width"
+                        data-testid="input-target-width"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="maxWidth" className="text-sm font-medium">
-                        Max Width (px)
+                      <Label htmlFor="targetHeight" className="text-sm font-medium">
+                        Target Height (px)
                       </Label>
                       <Input
-                        id="maxWidth"
+                        id="targetHeight"
                         type="number"
                         min={1}
                         max={2000}
                         placeholder="Optional"
-                        value={customSettings.maxWidth}
+                        value={customSettings.targetHeight}
                         onChange={(e) => setCustomSettings(prev => ({
                           ...prev,
-                          maxWidth: e.target.value
+                          targetHeight: e.target.value
                         }))}
                         className="font-mono text-right"
-                        data-testid="input-max-width"
+                        data-testid="input-target-height"
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="minHeight" className="text-sm font-medium">
-                        Min Height (px)
-                      </Label>
-                      <Input
-                        id="minHeight"
-                        type="number"
-                        min={1}
-                        max={2000}
-                        placeholder="Optional"
-                        value={customSettings.minHeight}
-                        onChange={(e) => setCustomSettings(prev => ({
-                          ...prev,
-                          minHeight: e.target.value
-                        }))}
-                        className="font-mono text-right"
-                        data-testid="input-min-height"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="maxHeight" className="text-sm font-medium">
-                        Max Height (px)
-                      </Label>
-                      <Input
-                        id="maxHeight"
-                        type="number"
-                        min={1}
-                        max={2000}
-                        placeholder="Optional"
-                        value={customSettings.maxHeight}
-                        onChange={(e) => setCustomSettings(prev => ({
-                          ...prev,
-                          maxHeight: e.target.value
-                        }))}
-                        className="font-mono text-right"
-                        data-testid="input-max-height"
-                      />
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">* Required. Dimension fields are optional.</p>
+                  <p className="text-xs text-muted-foreground">
+                    * Required. Smaller images will be padded with white. Larger images will be cropped from center.
+                  </p>
                 </div>
               )}
             </label>

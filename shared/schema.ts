@@ -6,10 +6,8 @@ export type ConversionMode = typeof conversionModes[number];
 export const conversionRequestSchema = z.object({
   mode: z.enum(conversionModes),
   maxFileSize: z.number().min(0.1).max(50).optional(),
-  minWidth: z.number().min(1).max(2000).optional(),
-  maxWidth: z.number().min(1).max(2000).optional(),
-  minHeight: z.number().min(1).max(2000).optional(),
-  maxHeight: z.number().min(1).max(2000).optional(),
+  targetWidth: z.number().min(1).max(2000).optional(),
+  targetHeight: z.number().min(1).max(2000).optional(),
 });
 
 export type ConversionRequest = z.infer<typeof conversionRequestSchema>;
