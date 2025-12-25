@@ -403,6 +403,10 @@ export async function registerRoutes(
   
   cron.schedule("* * * * *", cleanupExpiredFiles);
 
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   app.post("/api/convert", gifUpload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
