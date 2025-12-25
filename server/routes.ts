@@ -13,11 +13,14 @@ import {
   fileUploadRequestSchema,
   adminLoginRequestSchema,
   shareCreateRequestSchema,
+  shareUpdateRequestSchema,
   shareAccessRequestSchema,
   type TempDriveFile,
+  type TempDriveShare,
   type TempDriveShareFile,
   type TempDriveSession,
-  type TempDriveBlockedIp
+  type TempDriveBlockedIp,
+  SHARE_QUOTA_BYTES
 } from "@shared/schema";
 import { UPLOAD_DIR, CONVERTED_DIR, SHARED_DIR, TEMP_DRIVE_DIR, getStorageInfo, isStorageNearFull } from "./config";
 import {
@@ -672,9 +675,10 @@ export async function registerRoutes(
       return { valid: false, session: null, isAdmin: false };
     }
 
-    if (session.type === "share") {
-      const share = await storage.getTempDriveShare();
-      if (!share || !share.active || isShareExpired(share.expiresAt)) {
+    if (session.type === "share" && session.shareId) {
+      const share = await storage.getTempDriveShare(session.shareId);
+      const globalSettings = await storage.getGlobalSettings();
+      if (!share || !share.active || !globalSettings.sharingEnabled || isShareExpired(share.expiresAt)) {
         await storage.deleteTempDriveSession(token);
         return { valid: false, session: null, isAdmin: false };
       }
@@ -686,21 +690,15 @@ export async function registerRoutes(
   app.get("/api/temp-drive/status", async (req, res) => {
     try {
       const admin = await storage.getTempDriveAdmin();
-      const share = await storage.getTempDriveShare();
-      
-      let shareActive = false;
-      if (share && share.active) {
-        if (isShareExpired(share.expiresAt)) {
-          await storage.deleteTempDriveShare();
-        } else {
-          shareActive = true;
-        }
-      }
+      const globalSettings = await storage.getGlobalSettings();
+      const shares = await storage.getAllTempDriveShares();
+      const activeShares = shares.filter(s => s.active && !isShareExpired(s.expiresAt)).length;
 
       res.json({
         totpSetupComplete: admin?.totpSetupComplete || false,
-        shareActive,
-        shareExpiresAt: shareActive && share ? share.expiresAt : null
+        sharingEnabled: globalSettings.sharingEnabled,
+        activeShareCount: activeShares,
+        totalShareCount: shares.length
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to get status" });
@@ -831,7 +829,22 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/temp-drive/share/create", async (req, res) => {
+  app.get("/api/temp-drive/shares", async (req, res) => {
+    try {
+      const { valid, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !isAdmin) {
+        return res.status(401).json({ message: "Admin authentication required" });
+      }
+
+      const shares = await storage.getAllTempDriveShares();
+      const globalSettings = await storage.getGlobalSettings();
+      res.json({ shares, sharingEnabled: globalSettings.sharingEnabled });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to get shares" });
+    }
+  });
+
+  app.post("/api/temp-drive/shares", async (req, res) => {
     try {
       const { valid, isAdmin } = await validateTempDriveSession(req);
       if (!valid || !isAdmin) {
@@ -843,14 +856,8 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid request" });
       }
 
-      const existingShare = await storage.getTempDriveShare();
-      if (existingShare && existingShare.folderId) {
-        await storage.deleteAllShareFiles(existingShare.id);
-        deleteShareFolder(existingShare.folderId);
-      }
-
-      const { password, expiryMinutes } = parsed.data;
-      const passwordHash = await hashPassword(password);
+      const { label, password, expiryMinutes } = parsed.data;
+      const passwordHash = password ? await hashPassword(password) : null;
       const shareToken = generateShareToken();
       const folderId = randomUUID();
       
@@ -860,45 +867,106 @@ export async function registerRoutes(
         ? new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString()
         : null;
 
-      const share = {
+      const share: TempDriveShare = {
         id: randomUUID(),
+        label,
         token: shareToken,
         passwordHash,
         folderId,
         expiresAt,
         createdAt: new Date().toISOString(),
-        active: true
+        active: true,
+        usedBytes: 0
       };
 
       await storage.saveTempDriveShare(share);
 
       res.json({
-        shareUrl: `/temp-drive/share/${shareToken}`,
-        token: shareToken,
-        expiresAt
+        share,
+        shareUrl: `/temp-drive/share/${shareToken}`
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to create share" });
     }
   });
 
-  app.post("/api/temp-drive/share/disable", async (req, res) => {
+  app.patch("/api/temp-drive/shares/:id", async (req, res) => {
     try {
       const { valid, isAdmin } = await validateTempDriveSession(req);
       if (!valid || !isAdmin) {
         return res.status(401).json({ message: "Admin authentication required" });
       }
 
-      const share = await storage.getTempDriveShare();
+      const { id } = req.params;
+      const parsed = shareUpdateRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Invalid request" });
+      }
+
+      const updates: Partial<TempDriveShare> = {};
+      if (parsed.data.label !== undefined) updates.label = parsed.data.label;
+      if (parsed.data.active !== undefined) updates.active = parsed.data.active;
+      if (parsed.data.password !== undefined) {
+        updates.passwordHash = parsed.data.password ? await hashPassword(parsed.data.password) : null;
+      }
+      if (parsed.data.expiryMinutes !== undefined) {
+        updates.expiresAt = parsed.data.expiryMinutes 
+          ? new Date(Date.now() + parsed.data.expiryMinutes * 60 * 1000).toISOString()
+          : null;
+      }
+
+      const updated = await storage.updateTempDriveShare(id, updates);
+      if (!updated) {
+        return res.status(404).json({ message: "Share not found" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to update share" });
+    }
+  });
+
+  app.delete("/api/temp-drive/shares/:id", async (req, res) => {
+    try {
+      const { valid, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !isAdmin) {
+        return res.status(401).json({ message: "Admin authentication required" });
+      }
+
+      const { id } = req.params;
+      const share = await storage.getTempDriveShare(id);
       if (share && share.folderId) {
         await storage.deleteAllShareFiles(share.id);
         deleteShareFolder(share.folderId);
       }
 
-      await storage.deleteTempDriveShare();
+      const deleted = await storage.deleteTempDriveShare(id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Share not found" });
+      }
+
       res.json({ success: true });
     } catch (error: any) {
-      res.status(500).json({ message: error.message || "Failed to disable share" });
+      res.status(500).json({ message: error.message || "Failed to delete share" });
+    }
+  });
+
+  app.post("/api/temp-drive/global-sharing", async (req, res) => {
+    try {
+      const { valid, isAdmin } = await validateTempDriveSession(req);
+      if (!valid || !isAdmin) {
+        return res.status(401).json({ message: "Admin authentication required" });
+      }
+
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") {
+        return res.status(400).json({ message: "Invalid request" });
+      }
+
+      await storage.saveGlobalSettings({ sharingEnabled: enabled });
+      res.json({ sharingEnabled: enabled });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to update global sharing" });
     }
   });
 
@@ -910,15 +978,15 @@ export async function registerRoutes(
         return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
       }
 
-      const { token } = req.params;
-      const parsed = shareAccessRequestSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Password required" });
+      const globalSettings = await storage.getGlobalSettings();
+      if (!globalSettings.sharingEnabled) {
+        return res.status(403).json({ message: "Sharing is currently disabled" });
       }
 
-      const share = await storage.getTempDriveShare();
-      if (!share || share.token !== token || !share.active) {
-        return res.status(404).json({ message: "Share not found or expired" });
+      const { token } = req.params;
+      const share = await storage.getTempDriveShareByToken(token);
+      if (!share || !share.active) {
+        return res.status(404).json({ message: "Share not found or disabled" });
       }
 
       if (isShareExpired(share.expiresAt)) {
@@ -926,17 +994,24 @@ export async function registerRoutes(
           await storage.deleteAllShareFiles(share.id);
           deleteShareFolder(share.folderId);
         }
-        await storage.deleteTempDriveShare();
+        await storage.deleteTempDriveShare(share.id);
         return res.status(410).json({ message: "Share has expired" });
       }
 
-      const isValidPassword = await verifyPassword(parsed.data.password, share.passwordHash);
-      if (!isValidPassword) {
-        const { blocked, remainingAttempts } = await checkAndRecordLoginAttempt(clientIp, "share", share.id, false);
-        if (blocked) {
-          return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
+      if (share.passwordHash) {
+        const parsed = shareAccessRequestSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: "Password required" });
         }
-        return res.status(401).json({ message: `Invalid password. ${remainingAttempts} attempts remaining.` });
+
+        const isValidPassword = await verifyPassword(parsed.data.password, share.passwordHash);
+        if (!isValidPassword) {
+          const { blocked, remainingAttempts } = await checkAndRecordLoginAttempt(clientIp, "share", share.id, false);
+          if (blocked) {
+            return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
+          }
+          return res.status(401).json({ message: `Invalid password. ${remainingAttempts} attempts remaining.` });
+        }
       }
 
       await checkAndRecordLoginAttempt(clientIp, "share", share.id, true);
@@ -950,7 +1025,7 @@ export async function registerRoutes(
         createdAt: new Date().toISOString()
       });
 
-      res.json({ token: sessionToken, type: "share" });
+      res.json({ token: sessionToken, type: "share", shareId: share.id });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Access failed" });
     }
@@ -958,11 +1033,16 @@ export async function registerRoutes(
 
   app.get("/api/temp-drive/share/validate/:token", async (req, res) => {
     try {
+      const globalSettings = await storage.getGlobalSettings();
+      if (!globalSettings.sharingEnabled) {
+        return res.json({ valid: false, requiresPassword: false });
+      }
+
       const { token } = req.params;
-      const share = await storage.getTempDriveShare();
+      const share = await storage.getTempDriveShareByToken(token);
       
-      if (!share || share.token !== token || !share.active) {
-        return res.json({ valid: false });
+      if (!share || !share.active) {
+        return res.json({ valid: false, requiresPassword: false });
       }
 
       if (isShareExpired(share.expiresAt)) {
@@ -970,11 +1050,11 @@ export async function registerRoutes(
           await storage.deleteAllShareFiles(share.id);
           deleteShareFolder(share.folderId);
         }
-        await storage.deleteTempDriveShare();
-        return res.json({ valid: false });
+        await storage.deleteTempDriveShare(share.id);
+        return res.json({ valid: false, requiresPassword: false });
       }
 
-      res.json({ valid: true });
+      res.json({ valid: true, requiresPassword: !!share.passwordHash, label: share.label });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Validation failed" });
     }
@@ -988,15 +1068,28 @@ export async function registerRoutes(
       }
 
       if (isAdmin) {
-        const files = await storage.getTempDriveFiles();
-        res.json(files);
+        const shareIdQuery = req.query.shareId as string | undefined;
+        if (shareIdQuery) {
+          const share = await storage.getTempDriveShare(shareIdQuery);
+          if (!share) {
+            return res.status(404).json({ message: "Share not found" });
+          }
+          const files = await storage.getShareFiles(share.id);
+          res.json({ files, quota: { usedBytes: share.usedBytes, totalBytes: SHARE_QUOTA_BYTES } });
+        } else {
+          const files = await storage.getTempDriveFiles();
+          res.json(files);
+        }
       } else {
-        const share = await storage.getTempDriveShare();
+        if (!session.shareId) {
+          return res.status(404).json({ message: "Share not found" });
+        }
+        const share = await storage.getTempDriveShare(session.shareId);
         if (!share) {
           return res.status(404).json({ message: "Share not found" });
         }
         const files = await storage.getShareFiles(share.id);
-        res.json(files);
+        res.json({ files, quota: { usedBytes: share.usedBytes, totalBytes: SHARE_QUOTA_BYTES } });
       }
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to get files" });
@@ -1047,10 +1140,19 @@ export async function registerRoutes(
         await storage.saveTempDriveFile(tempDriveFile);
         res.json(tempDriveFile);
       } else {
-        const share = await storage.getTempDriveShare();
+        if (!session.shareId) {
+          fs.unlinkSync(req.file.path);
+          return res.status(404).json({ message: "Share not found" });
+        }
+        const share = await storage.getTempDriveShare(session.shareId);
         if (!share || !share.folderId) {
           fs.unlinkSync(req.file.path);
           return res.status(404).json({ message: "Share not found" });
+        }
+
+        if (share.usedBytes + req.file.size > SHARE_QUOTA_BYTES) {
+          fs.unlinkSync(req.file.path);
+          return res.status(507).json({ message: "Storage quota exceeded. Maximum 1GB per share." });
         }
 
         const folderPath = path.join(SHARE_FOLDERS_DIR, share.folderId);
@@ -1075,6 +1177,7 @@ export async function registerRoutes(
         };
 
         await storage.saveShareFile(shareFile);
+        await storage.updateTempDriveShare(share.id, { usedBytes: share.usedBytes + req.file.size });
         res.json(shareFile);
       }
     } catch (error: any) {
@@ -1122,7 +1225,10 @@ export async function registerRoutes(
         res.setHeader("Content-Disposition", `attachment; filename="${safeFileName}"`);
         res.sendFile(filePath);
       } else {
-        const share = await storage.getTempDriveShare();
+        if (!session.shareId) {
+          return res.status(404).json({ message: "Share not found" });
+        }
+        const share = await storage.getTempDriveShare(session.shareId);
         if (!share || !share.folderId) {
           return res.status(404).json({ message: "Share not found" });
         }
@@ -1256,14 +1362,16 @@ export async function registerRoutes(
       await storage.cleanOldLoginAttempts();
       await storage.cleanExpiredBlocks();
       
-      const share = await storage.getTempDriveShare();
-      if (share && share.active && isShareExpired(share.expiresAt)) {
-        if (share.folderId) {
-          await storage.deleteAllShareFiles(share.id);
-          deleteShareFolder(share.folderId);
+      const shares = await storage.getAllTempDriveShares();
+      for (const share of shares) {
+        if (share.active && isShareExpired(share.expiresAt)) {
+          if (share.folderId) {
+            await storage.deleteAllShareFiles(share.id);
+            deleteShareFolder(share.folderId);
+          }
+          await storage.deleteTempDriveShare(share.id);
+          console.log(`Expired share ${share.id} and its folder cleaned up`);
         }
-        await storage.deleteTempDriveShare();
-        console.log("Expired share and its folder cleaned up");
       }
     } catch (error) {
       console.error("Error cleaning up temp drive:", error);

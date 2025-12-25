@@ -408,8 +408,10 @@ export class PersistentStorage implements IStorage {
   async cleanExpiredSessions(): Promise<void> {
     await this.loadSessions();
     const now = new Date();
-    for (const [token, session] of this.sessions.entries()) {
-      if (new Date(session.expiresAt) <= now) {
+    const tokens = Array.from(this.sessions.keys());
+    for (const token of tokens) {
+      const session = this.sessions.get(token);
+      if (session && new Date(session.expiresAt) <= now) {
         this.sessions.delete(token);
       }
     }
