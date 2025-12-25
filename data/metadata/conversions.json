@@ -54,5 +54,19 @@
     "downloadFilename": "twiconv04.gif",
     "success": true,
     "id": "c8cda7d3-b5d4-48c3-9590-6f0a4a5d7ccb"
+  },
+  "7dab89d5-b98a-4269-8c15-895efd2e9bab": {
+    "originalSize": 41245,
+    "finalSize": 50763,
+    "originalWidth": 128,
+    "originalHeight": 179,
+    "finalWidth": 180,
+    "finalHeight": 180,
+    "frameCount": 12,
+    "downloadUrl": "/api/converted/7dab89d5-b98a-4269-8c15-895efd2e9bab.gif",
+    "previewUrl": "/api/converted/7dab89d5-b98a-4269-8c15-895efd2e9bab.gif",
+    "downloadFilename": "IMGconv01.gif",
+    "success": true,
+    "id": "7dab89d5-b98a-4269-8c15-895efd2e9bab"
   }
 }
