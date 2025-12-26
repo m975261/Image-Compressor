@@ -58,8 +58,15 @@ export function verifyTotp(secret: string, token: string): boolean {
     period: 30,
     secret: OTPAuth.Secret.fromBase32(secret),
   });
-  // Window of 2 allows for 60 seconds before/after to account for time sync issues
-  const delta = totp.validate({ token: cleanToken, window: 2 });
+  
+  // Log server time for debugging time sync issues
+  const serverTime = new Date();
+  const expectedToken = totp.generate();
+  console.log(`TOTP Debug - Server time: ${serverTime.toISOString()}, Unix: ${Math.floor(serverTime.getTime()/1000)}, Expected token: ${expectedToken}, Received: ${cleanToken}`);
+  
+  // Window of 5 allows for 150 seconds before/after to account for Docker/container time sync issues
+  const delta = totp.validate({ token: cleanToken, window: 5 });
+  console.log(`TOTP validation result: ${delta !== null ? 'SUCCESS' : 'FAILED'} (delta: ${delta})`);
   return delta !== null;
 }
 
