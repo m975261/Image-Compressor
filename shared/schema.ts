@@ -12,6 +12,17 @@ export const conversionRequestSchema = z.object({
 
 export type ConversionRequest = z.infer<typeof conversionRequestSchema>;
 
+export const imageMetadataSchema = z.object({
+  width: z.number(),
+  height: z.number(),
+  fileSize: z.number(),
+  frames: z.number(),
+  format: z.string(),
+  isAnimated: z.boolean(),
+});
+
+export type ImageMetadata = z.infer<typeof imageMetadataSchema>;
+
 export const conversionResultSchema = z.object({
   id: z.string(),
   originalSize: z.number(),
@@ -26,6 +37,8 @@ export const conversionResultSchema = z.object({
   downloadFilename: z.string(),
   success: z.boolean(),
   error: z.string().optional(),
+  requiresApproval: z.boolean().optional(),
+  approvalMessage: z.string().optional(),
 });
 
 export type ConversionResult = z.infer<typeof conversionResultSchema>;
@@ -109,7 +122,7 @@ export const SHARE_QUOTA_BYTES = 1024 * 1024 * 1024; // 1GB per share
 
 export const tempDriveLoginAttemptSchema = z.object({
   ip: z.string(),
-  type: z.enum(["admin", "share"]),
+  type: z.enum(["admin", "share", "home"]),
   shareId: z.string().nullable(),
   success: z.boolean(),
   timestamp: z.string(),
@@ -118,7 +131,7 @@ export type TempDriveLoginAttempt = z.infer<typeof tempDriveLoginAttemptSchema>;
 
 export const tempDriveBlockedIpSchema = z.object({
   ip: z.string(),
-  reason: z.enum(["admin_login", "share_access"]),
+  reason: z.enum(["admin_login", "share_access", "home_login"]),
   shareId: z.string().nullable(),
   blockedAt: z.string(),
   expiresAt: z.string(),
