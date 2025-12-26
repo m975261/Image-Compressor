@@ -2,11 +2,17 @@
 
 ## Overview
 
-A file utility web application with two main features: animated GIF conversion and temporary file sharing. Built as a full-stack TypeScript application with React frontend and Express backend.
+A file utility web application with animated image conversion, temporary file sharing, and a multi-share Temp Drive system. Built as a full-stack TypeScript application with React frontend and Express backend, Docker-ready for Unraid deployment.
 
 **Core Features:**
-- **Image Converter**: Upload animated GIFs and convert them with preset (Yalla Ludo) or custom size/dimension settings
+- **Image Converter**: Upload animated images (GIF, WebP, AVIF) and convert to GIF with optimization
+  - Yalla Ludo preset: 2MB max, 180x180px minimum (pads smaller images)
+  - Custom mode: User-defined max file size
+  - Pre-processing metadata display (dimensions, file size, frame count)
+  - Strict fallback: Non-destructive optimization first, user approval required for frame reduction
 - **Temporary File Sharing**: Upload files with configurable expiry times (up to 24 hours) and shareable download links
+- **Temp Drive**: Multi-share system with admin dashboard, password + 2FA protection, 1GB quotas per share
+- **Homepage Authentication**: Password-protected access to tools using admin password (share links remain public)
 
 ## User Preferences
 
@@ -41,9 +47,19 @@ Preferred communication style: Simple, everyday language.
 - **Schema Location**: `shared/schema.ts` contains Zod schemas for validation
 
 ### API Structure
-- `POST /api/convert` - GIF conversion endpoint
+- `GET /api/health` - Docker health check endpoint
+- `POST /api/image/metadata` - Get pre-processing image info (dimensions, frames)
+- `POST /api/convert` - Animated image to GIF conversion (supports WebP, AVIF, GIF input)
 - `GET/POST /api/files` - File sharing CRUD operations
+- `GET/POST /api/home/*` - Homepage authentication (login, session, logout)
+- `GET/POST /api/temp-drive/*` - Temp Drive admin and share endpoints
 - Files served from filesystem directories
+
+### Authentication
+- Homepage tools: Protected by admin password (TEMP_DRIVE_ADMIN_HASH bcrypt hash)
+- Temp Drive admin: Same password + optional TOTP 2FA
+- Share links: Public access (no auth required)
+- IP blocking: 5 failed attempts = 48-hour block
 
 ### Key Design Decisions
 
@@ -62,7 +78,12 @@ Preferred communication style: Simple, everyday language.
 - Drizzle Kit for migrations (`drizzle.config.ts`)
 
 ### Image Processing
-- Relies on external CLI tools (likely gifsicle or similar) via `child_process.exec` for GIF manipulation
+- **gifsicle**: GIF optimization, frame reduction, palette manipulation
+- **ffmpeg**: Format conversion (WebP/AVIF to GIF)
+- Processing rules:
+  - Minimum 180x180px with edge-color padding (no cropping)
+  - Palette optimization before frame reduction
+  - Frame reduction requires explicit user approval
 
 ### Key NPM Packages
 - `multer` - File upload handling
