@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,16 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   Upload, 
   Download, 
@@ -14,11 +24,14 @@ import {
   CheckCircle, 
   Loader2,
   X,
-  FileImage
+  FileImage,
+  AlertTriangle,
+  Info
 } from "lucide-react";
-import type { ConversionMode, ConversionResult } from "@shared/schema";
+import type { ConversionMode, ConversionResult, ImageMetadata } from "@shared/schema";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_TYPES = ["image/gif", "image/webp", "image/avif"];
 
 export function ImageConverter() {
   const [file, setFile] = useState<File | null>(null);
@@ -26,15 +39,18 @@ export function ImageConverter() {
   const [mode, setMode] = useState<ConversionMode | null>(null);
   const [customSettings, setCustomSettings] = useState({
     maxFileSize: 2,
-    targetWidth: "",
-    targetHeight: "",
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const [result, setResult] = useState<ConversionResult | null>(null);
+  const [metadata, setMetadata] = useState<ImageMetadata | null>(null);
+  const [approvalDialog, setApprovalDialog] = useState<{
+    open: boolean;
+    message: string;
+  }>({ open: false, message: "" });
 
-  const validateGif = useCallback((file: File): string | null => {
-    if (!file.type.includes("gif")) {
-      return "Please upload a GIF file only";
+  const validateAnimatedImage = useCallback((file: File): string | null => {
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      return "Please upload a GIF, animated WebP, or animated AVIF file";
     }
     if (file.size > MAX_UPLOAD_SIZE) {
       return "File size exceeds 10MB limit";
@@ -42,9 +58,28 @@ export function ImageConverter() {
     return null;
   }, []);
 
+  const fetchMetadata = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    try {
+      const response = await fetch("/api/image/metadata", {
+        method: "POST",
+        body: formData,
+      });
+      if (response.ok) {
+        const data = await response.json() as ImageMetadata;
+        setMetadata(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch metadata:", error);
+    }
+  };
+
   const handleFileSelect = useCallback((selectedFile: File | null) => {
     setResult(null);
     setValidationError(null);
+    setMetadata(null);
 
     if (!selectedFile) {
       setFile(null);
@@ -52,7 +87,7 @@ export function ImageConverter() {
       return;
     }
 
-    const error = validateGif(selectedFile);
+    const error = validateAnimatedImage(selectedFile);
     if (error) {
       setValidationError(error);
       setFile(null);
@@ -63,7 +98,8 @@ export function ImageConverter() {
     setFile(selectedFile);
     const url = URL.createObjectURL(selectedFile);
     setPreviewUrl(url);
-  }, [validateGif]);
+    fetchMetadata(selectedFile);
+  }, [validateAnimatedImage]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -85,20 +121,20 @@ export function ImageConverter() {
     setPreviewUrl(null);
     setResult(null);
     setValidationError(null);
+    setMetadata(null);
   }, []);
 
   const convertMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (allowFrameReduction: boolean = false) => {
       if (!file || !mode) throw new Error("Missing file or mode");
 
       const formData = new FormData();
       formData.append("file", file);
       formData.append("mode", mode);
+      formData.append("allowFrameReduction", allowFrameReduction.toString());
 
       if (mode === "custom") {
         formData.append("maxFileSize", customSettings.maxFileSize.toString());
-        if (customSettings.targetWidth) formData.append("targetWidth", customSettings.targetWidth.toString());
-        if (customSettings.targetHeight) formData.append("targetHeight", customSettings.targetHeight.toString());
       }
 
       const response = await fetch("/api/convert", {
@@ -106,17 +142,49 @@ export function ImageConverter() {
         body: formData,
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Conversion failed");
+        throw new Error(data.message || "Conversion failed");
       }
 
-      return response.json() as Promise<ConversionResult>;
+      return data as ConversionResult;
     },
     onSuccess: (data) => {
-      setResult(data);
+      if (data.requiresApproval) {
+        setApprovalDialog({
+          open: true,
+          message: data.approvalMessage || "Frame reduction is required to meet the size limit."
+        });
+      } else {
+        setResult(data);
+      }
     },
   });
+
+  const handleApprovalConfirm = () => {
+    setApprovalDialog({ open: false, message: "" });
+    convertMutation.mutate(true);
+  };
+
+  const handleApprovalCancel = () => {
+    setApprovalDialog({ open: false, message: "" });
+    setResult({
+      id: "",
+      originalSize: file?.size || 0,
+      finalSize: 0,
+      originalWidth: metadata?.width || 0,
+      originalHeight: metadata?.height || 0,
+      finalWidth: 0,
+      finalHeight: 0,
+      frameCount: metadata?.frames || 0,
+      downloadUrl: "",
+      previewUrl: "",
+      downloadFilename: "",
+      success: false,
+      error: "Conversion cancelled. The file cannot be optimized without frame reduction."
+    });
+  };
 
   const canConvert = file && mode && (mode === "yalla_ludo" || customSettings.maxFileSize > 0);
 
@@ -143,16 +211,16 @@ export function ImageConverter() {
               </div>
               <div className="text-center">
                 <p className="text-base font-medium text-foreground">
-                  Drop GIF here or click to browse
+                  Drop animated image here or click to browse
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Animated GIF only, max 10MB
+                  GIF, animated WebP, or AVIF (max 10MB)
                 </p>
               </div>
               <input
                 id="gif-upload"
                 type="file"
-                accept="image/gif"
+                accept="image/gif,image/webp,image/avif"
                 className="hidden"
                 onChange={handleFileInput}
                 data-testid="input-gif-upload"
@@ -188,6 +256,35 @@ export function ImageConverter() {
                   <X className="w-4 h-4" />
                 </Button>
               </div>
+              
+              {metadata && (
+                <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Info className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Original File Information</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">File Size</p>
+                      <p className="font-mono font-medium" data-testid="text-original-size">
+                        {formatFileSize(metadata.fileSize)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Dimensions</p>
+                      <p className="font-mono font-medium" data-testid="text-original-dimensions">
+                        {metadata.width} x {metadata.height} px
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Format</p>
+                      <p className="font-mono font-medium" data-testid="text-original-format">
+                        {metadata.format} ({metadata.frames} frames)
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -227,7 +324,7 @@ export function ImageConverter() {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Optimized for Yalla Ludo avatars (pads small, crops large)
+                  Pads small images to 180x180 minimum, always outputs GIF
                 </p>
               </div>
             </label>
@@ -250,69 +347,27 @@ export function ImageConverter() {
 
               {mode === "custom" && (
                 <div className="space-y-4 ml-8">
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="maxFileSize" className="text-sm font-medium">
-                        Max File Size (MB) *
-                      </Label>
-                      <Input
-                        id="maxFileSize"
-                        type="number"
-                        min={0.1}
-                        max={50}
-                        step={0.1}
-                        value={customSettings.maxFileSize}
-                        onChange={(e) => setCustomSettings(prev => ({
-                          ...prev,
-                          maxFileSize: parseFloat(e.target.value) || 0
-                        }))}
-                        className="font-mono text-right max-w-32"
-                        data-testid="input-max-file-size"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="targetWidth" className="text-sm font-medium">
-                        Target Width (px)
-                      </Label>
-                      <Input
-                        id="targetWidth"
-                        type="number"
-                        min={1}
-                        max={2000}
-                        placeholder="Optional"
-                        value={customSettings.targetWidth}
-                        onChange={(e) => setCustomSettings(prev => ({
-                          ...prev,
-                          targetWidth: e.target.value
-                        }))}
-                        className="font-mono text-right"
-                        data-testid="input-target-width"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="targetHeight" className="text-sm font-medium">
-                        Target Height (px)
-                      </Label>
-                      <Input
-                        id="targetHeight"
-                        type="number"
-                        min={1}
-                        max={2000}
-                        placeholder="Optional"
-                        value={customSettings.targetHeight}
-                        onChange={(e) => setCustomSettings(prev => ({
-                          ...prev,
-                          targetHeight: e.target.value
-                        }))}
-                        className="font-mono text-right"
-                        data-testid="input-target-height"
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maxFileSize" className="text-sm font-medium">
+                      Max File Size (MB) *
+                    </Label>
+                    <Input
+                      id="maxFileSize"
+                      type="number"
+                      min={0.1}
+                      max={50}
+                      step={0.1}
+                      value={customSettings.maxFileSize}
+                      onChange={(e) => setCustomSettings(prev => ({
+                        ...prev,
+                        maxFileSize: parseFloat(e.target.value) || 0
+                      }))}
+                      className="font-mono text-right max-w-32"
+                      data-testid="input-max-file-size"
+                    />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    * Required. Smaller images will be padded with white. Larger images will be cropped from center.
+                    Output is always GIF. Small images will be padded to 180x180 minimum.
                   </p>
                 </div>
               )}
@@ -324,7 +379,7 @@ export function ImageConverter() {
       <Button
         className="w-full py-6 text-base font-medium"
         disabled={!canConvert || convertMutation.isPending}
-        onClick={() => convertMutation.mutate()}
+        onClick={() => convertMutation.mutate(false)}
         data-testid="button-convert"
       >
         {convertMutation.isPending ? (
@@ -335,7 +390,7 @@ export function ImageConverter() {
         ) : (
           <>
             <FileImage className="w-4 h-4 mr-2" />
-            Convert GIF
+            Convert to GIF
           </>
         )}
       </Button>
@@ -363,6 +418,22 @@ export function ImageConverter() {
                 <p className="font-medium text-destructive">Conversion Failed</p>
                 <p className="text-sm text-muted-foreground mt-1" data-testid="text-conversion-error">
                   {convertMutation.error?.message || "An unexpected error occurred"}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {result && !result.success && result.error && (
+        <Card className="border-destructive/50">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-destructive">Conversion Not Possible</p>
+                <p className="text-sm text-muted-foreground mt-1" data-testid="text-conversion-cancelled">
+                  {result.error}
                 </p>
               </div>
             </div>
@@ -441,19 +512,46 @@ export function ImageConverter() {
 
                 <Button 
                   className="w-full mt-4" 
-                  asChild
                   data-testid="button-download"
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = result.downloadUrl;
+                    link.download = result.downloadFilename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
                 >
-                  <a href={result.downloadUrl} download={result.downloadFilename}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Download as {result.downloadFilename}
-                  </a>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download as {result.downloadFilename}
                 </Button>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog open={approvalDialog.open} onOpenChange={(open) => !open && handleApprovalCancel()}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              Frame Reduction Required
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {approvalDialog.message}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleApprovalCancel} data-testid="button-cancel-frame-reduction">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleApprovalConfirm} data-testid="button-approve-frame-reduction">
+              Proceed with Frame Reduction
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
