@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -14,6 +15,21 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+// Session middleware
+const sessionSecret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
+app.use(
+  session({
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 4 * 60 * 60 * 1000, // 4 hours
+    },
+  })
+);
 
 app.use(
   express.json({
