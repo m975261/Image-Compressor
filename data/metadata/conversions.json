@@ -68,5 +68,47 @@
     "downloadFilename": "IMGconv01.gif",
     "success": true,
     "id": "7dab89d5-b98a-4269-8c15-895efd2e9bab"
+  },
+  "57f11771-da7a-4973-bf2d-933ebee79e60": {
+    "originalSize": 1712739,
+    "finalSize": 2092938,
+    "originalWidth": 288,
+    "originalHeight": 162,
+    "finalWidth": 288,
+    "finalHeight": 180,
+    "frameCount": 80,
+    "downloadUrl": "/api/converted/57f11771-da7a-4973-bf2d-933ebee79e60.gif",
+    "previewUrl": "/api/converted/57f11771-da7a-4973-bf2d-933ebee79e60.gif",
+    "downloadFilename": "gipconv01.gif",
+    "success": true,
+    "id": "57f11771-da7a-4973-bf2d-933ebee79e60"
+  },
+  "64959555-1aa2-4afa-9605-499c52ecb187": {
+    "originalSize": 523057,
+    "finalSize": 650877,
+    "originalWidth": 180,
+    "originalHeight": 102,
+    "finalWidth": 180,
+    "finalHeight": 180,
+    "frameCount": 127,
+    "downloadUrl": "/api/converted/64959555-1aa2-4afa-9605-499c52ecb187.gif",
+    "previewUrl": "/api/converted/64959555-1aa2-4afa-9605-499c52ecb187.gif",
+    "downloadFilename": "IMGconv02.gif",
+    "success": true,
+    "id": "64959555-1aa2-4afa-9605-499c52ecb187"
+  },
+  "95d94f74-463d-4b9a-b1a0-9c0fc49c5fc8": {
+    "originalSize": 2092938,
+    "finalSize": 2092938,
+    "originalWidth": 288,
+    "originalHeight": 180,
+    "finalWidth": 288,
+    "finalHeight": 180,
+    "frameCount": 80,
+    "downloadUrl": "/api/converted/95d94f74-463d-4b9a-b1a0-9c0fc49c5fc8.gif",
+    "previewUrl": "/api/converted/95d94f74-463d-4b9a-b1a0-9c0fc49c5fc8.gif",
+    "downloadFilename": "IMGconv03.gif",
+    "success": true,
+    "id": "95d94f74-463d-4b9a-b1a0-9c0fc49c5fc8"
   }
 }
