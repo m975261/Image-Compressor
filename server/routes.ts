@@ -70,7 +70,7 @@ const BLOCK_DURATION_HOURS = 48;
 
 async function checkAndRecordLoginAttempt(
   ip: string,
-  type: "admin" | "share",
+  type: "admin" | "share" | "home",
   shareId: string | null,
   success: boolean
 ): Promise<{ blocked: boolean; remainingAttempts: number }> {
@@ -95,9 +95,10 @@ async function checkAndRecordLoginAttempt(
 
   if (failedCount >= MAX_LOGIN_ATTEMPTS) {
     const expiresAt = new Date(Date.now() + BLOCK_DURATION_HOURS * 60 * 60 * 1000).toISOString();
+    const reason = type === "admin" ? "admin_login" : type === "home" ? "home_login" : "share_access";
     await storage.blockIp({
       ip,
-      reason: type === "admin" ? "admin_login" : "share_access",
+      reason,
       shareId,
       blockedAt: new Date().toISOString(),
       expiresAt
@@ -125,7 +126,9 @@ function deleteShareFolder(folderId: string): void {
   }
 }
 
-const gifUpload = multer({
+const ALLOWED_ANIMATED_TYPES = ["image/gif", "image/webp", "image/avif"];
+
+const animatedImageUpload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
     filename: (req, file, cb) => {
@@ -135,8 +138,8 @@ const gifUpload = multer({
   }),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype !== "image/gif") {
-      cb(new Error("Only GIF files are allowed"));
+    if (!ALLOWED_ANIMATED_TYPES.includes(file.mimetype)) {
+      cb(new Error("Only GIF, animated WebP, or animated AVIF files are allowed"));
       return;
     }
     cb(null, true);
@@ -171,199 +174,228 @@ async function getGifInfo(filePath: string): Promise<{ width: number; height: nu
   }
 }
 
-interface OptimizeOptions {
-  maxSizeBytes: number;
-  targetWidth?: number;
-  targetHeight?: number;
+async function getImageMetadata(filePath: string, mimeType: string): Promise<{
+  width: number;
+  height: number;
+  frames: number;
+  format: string;
+  isAnimated: boolean;
+}> {
+  try {
+    const { stdout } = await execAsync(`identify -format "%w %h %n\\n" "${filePath}" 2>/dev/null | head -1`);
+    const parts = stdout.trim().split(/\s+/);
+    const width = parseInt(parts[0]) || 0;
+    const height = parseInt(parts[1]) || 0;
+    const frames = parseInt(parts[2]) || 1;
+    
+    let format = "unknown";
+    if (mimeType === "image/gif") format = "GIF";
+    else if (mimeType === "image/webp") format = "WebP";
+    else if (mimeType === "image/avif") format = "AVIF";
+    
+    return { width, height, frames, format, isAnimated: frames > 1 };
+  } catch (error) {
+    return { width: 0, height: 0, frames: 1, format: "unknown", isAnimated: false };
+  }
 }
 
+async function convertToGif(inputPath: string, outputPath: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await execAsync(`convert "${inputPath}" -coalesce "${outputPath}"`);
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Conversion to GIF failed" };
+  }
+}
+
+async function getDominantEdgeColor(filePath: string): Promise<string> {
+  try {
+    const { stdout } = await execAsync(
+      `convert "${filePath}[0]" -resize 1x1! -format "%[pixel:u]" info:- 2>/dev/null`
+    );
+    const color = stdout.trim();
+    if (color && color.match(/^(#[0-9a-fA-F]{6}|rgb\(|srgb\()/)) {
+      return color;
+    }
+    return "#FFFFFF";
+  } catch (error) {
+    return "#FFFFFF";
+  }
+}
+
+interface OptimizeOptions {
+  maxSizeBytes: number;
+  minWidth?: number;
+  minHeight?: number;
+  allowFrameReduction?: boolean;
+}
+
+interface OptimizeResult {
+  success: boolean;
+  error?: string;
+  requiresApproval?: boolean;
+  approvalMessage?: string;
+  tempOutputPath?: string;
+}
+
+const MIN_DIMENSION = 180;
+const MAX_SIZE_BYTES = 2 * 1024 * 1024;
+
 /**
- * Process GIF to target dimensions:
- * - If source is LARGER than target: Crop from edges, keep center
- * - If source is SMALLER than target: Add white padding, center original
- * - If source equals target: Pass through
- * Preserves animation in all cases.
+ * Enhanced processing for animated images (GIF, WebP, AVIF):
+ * - Output is ALWAYS GIF
+ * - If either dimension < 180px, expand canvas with padding (no scaling)
+ * - If both dimensions >= 180px, no resize/pad needed
+ * - Uses dominant edge color for padding
+ * - Preserves animation integrity
  */
-async function processGifDimensions(
+async function ensureMinimumDimensions(
   inputPath: string,
   outputPath: string,
-  targetWidth: number,
-  targetHeight: number
+  minWidth: number = MIN_DIMENSION,
+  minHeight: number = MIN_DIMENSION
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const info = await getGifInfo(inputPath);
     
-    // If dimensions match, just copy
-    if (info.width === targetWidth && info.height === targetHeight) {
+    const needsPadding = info.width < minWidth || info.height < minHeight;
+    
+    if (!needsPadding) {
       fs.copyFileSync(inputPath, outputPath);
       return { success: true };
     }
     
-    const needsCrop = info.width > targetWidth || info.height > targetHeight;
-    const needsPadding = info.width < targetWidth || info.height < targetHeight;
+    const bgColor = await getDominantEdgeColor(inputPath);
+    const newWidth = Math.max(info.width, minWidth);
+    const newHeight = Math.max(info.height, minHeight);
     
-    if (needsCrop && needsPadding) {
-      // Mixed case: one dimension larger, one smaller
-      // First resize to fit within target while maintaining aspect ratio, then pad
-      const scaleX = targetWidth / info.width;
-      const scaleY = targetHeight / info.height;
-      const scale = Math.min(scaleX, scaleY);
-      
-      const resizedWidth = Math.floor(info.width * scale);
-      const resizedHeight = Math.floor(info.height * scale);
-      
-      // Resize first, then pad
-      const tempResized = inputPath + ".resized.gif";
-      await execAsync(`gifsicle --resize ${resizedWidth}x${resizedHeight} "${inputPath}" -o "${tempResized}"`);
-      
-      // Add padding with ImageMagick (preserves animation)
-      await execAsync(`convert "${tempResized}" -coalesce -gravity center -background white -extent ${targetWidth}x${targetHeight} -layers optimize "${outputPath}"`);
-      
-      if (fs.existsSync(tempResized)) fs.unlinkSync(tempResized);
-      return { success: true };
-    }
+    await execAsync(
+      `convert "${inputPath}" -coalesce -gravity center -background "${bgColor}" -extent ${newWidth}x${newHeight} -layers optimize "${outputPath}"`
+    );
     
-    if (needsCrop) {
-      // Source is larger - crop from center
-      // First resize if needed to get closer to target, then crop center
-      let workingPath = inputPath;
-      let tempPath: string | null = null;
-      
-      // If much larger, resize first to reduce processing
-      if (info.width > targetWidth * 1.5 || info.height > targetHeight * 1.5) {
-        const scaleX = (targetWidth * 1.2) / info.width;
-        const scaleY = (targetHeight * 1.2) / info.height;
-        const scale = Math.max(scaleX, scaleY);
-        
-        const resizedWidth = Math.ceil(info.width * scale);
-        const resizedHeight = Math.ceil(info.height * scale);
-        
-        tempPath = inputPath + ".prescale.gif";
-        await execAsync(`gifsicle --resize ${resizedWidth}x${resizedHeight} "${inputPath}" -o "${tempPath}"`);
-        workingPath = tempPath;
-      }
-      
-      // Crop from center using ImageMagick (preserves animation)
-      await execAsync(`convert "${workingPath}" -coalesce -gravity center -crop ${targetWidth}x${targetHeight}+0+0 +repage -layers optimize "${outputPath}"`);
-      
-      if (tempPath && fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      return { success: true };
-    }
-    
-    if (needsPadding) {
-      // Source is smaller - add white padding around it
-      // Use ImageMagick to add padding while preserving animation
-      await execAsync(`convert "${inputPath}" -coalesce -gravity center -background white -extent ${targetWidth}x${targetHeight} -layers optimize "${outputPath}"`);
-      return { success: true };
-    }
-    
-    // Fallback: just copy
-    fs.copyFileSync(inputPath, outputPath);
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message || "Dimension processing failed" };
   }
 }
 
-async function optimizeGif(
+/**
+ * Strict fallback optimization for animated GIF:
+ * STEP 1: Non-destructive optimization (palette optimization, frame optimization)
+ * STEP 2: Further color palette reduction (still non-destructive)
+ * STEP 3: Return requiresApproval=true if frame reduction is needed
+ * STEP 4: If approved and still fails, return hard stop error
+ */
+async function optimizeAnimatedGif(
   inputPath: string,
   outputPath: string,
   options: OptimizeOptions
-): Promise<{ success: boolean; error?: string }> {
+): Promise<OptimizeResult> {
   try {
     const info = await getGifInfo(inputPath);
     const currentSize = fs.statSync(inputPath).size;
-    
-    const { maxSizeBytes, targetWidth, targetHeight } = options;
-
-    // Determine if we need dimension processing
-    const hasTargetDimensions = targetWidth !== undefined && targetHeight !== undefined;
-    const needsDimensionProcessing = hasTargetDimensions && 
-      (info.width !== targetWidth || info.height !== targetHeight);
-    
-    const needsSizeReduction = currentSize > maxSizeBytes;
-
-    // If no processing needed, just copy
-    if (!needsDimensionProcessing && !needsSizeReduction) {
-      fs.copyFileSync(inputPath, outputPath);
-      return { success: true };
-    }
+    const { maxSizeBytes, minWidth = MIN_DIMENSION, minHeight = MIN_DIMENSION, allowFrameReduction = false } = options;
 
     let workingPath = inputPath;
-    let tempDimensionPath: string | null = null;
+    let tempFiles: string[] = [];
 
-    // Step 1: Process dimensions first (crop/pad)
-    if (needsDimensionProcessing && targetWidth && targetHeight) {
-      tempDimensionPath = inputPath + ".dim.gif";
-      const dimResult = await processGifDimensions(inputPath, tempDimensionPath, targetWidth, targetHeight);
+    // Step 0: Ensure minimum dimensions (padding only, no scaling)
+    if (info.width < minWidth || info.height < minHeight) {
+      const dimPath = inputPath + ".dim.gif";
+      tempFiles.push(dimPath);
+      const dimResult = await ensureMinimumDimensions(inputPath, dimPath, minWidth, minHeight);
       if (!dimResult.success) {
-        if (tempDimensionPath && fs.existsSync(tempDimensionPath)) fs.unlinkSync(tempDimensionPath);
+        tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
         return dimResult;
       }
-      workingPath = tempDimensionPath;
+      workingPath = dimPath;
     }
 
-    // Check if size reduction is still needed
     let resultSize = fs.statSync(workingPath).size;
     
     if (resultSize <= maxSizeBytes) {
-      // Size is fine, just move/copy to output
       if (workingPath !== inputPath) {
         fs.renameSync(workingPath, outputPath);
+        tempFiles = tempFiles.filter(f => f !== workingPath);
       } else {
         fs.copyFileSync(workingPath, outputPath);
       }
+      tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
       return { success: true };
     }
 
-    // Step 2: Optimize with gifsicle for size reduction
+    // STEP 1: Standard GIF-safe optimizations (no frame loss)
     let cmd = `gifsicle -O3 --colors 256 "${workingPath}" -o "${outputPath}"`;
     await execAsync(cmd);
     resultSize = fs.statSync(outputPath).size;
 
-    if (resultSize > maxSizeBytes) {
-      cmd = `gifsicle -O3 --colors 128 "${workingPath}" -o "${outputPath}"`;
-      await execAsync(cmd);
-      resultSize = fs.statSync(outputPath).size;
+    if (resultSize <= maxSizeBytes) {
+      tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
+      return { success: true };
     }
 
-    if (resultSize > maxSizeBytes) {
-      cmd = `gifsicle -O3 --colors 64 "${workingPath}" -o "${outputPath}"`;
+    // STEP 2: Further palette reduction (still non-destructive)
+    const colorLevels = [192, 128, 96, 64, 48, 32];
+    for (const colors of colorLevels) {
+      cmd = `gifsicle -O3 --colors ${colors} "${workingPath}" -o "${outputPath}"`;
       await execAsync(cmd);
       resultSize = fs.statSync(outputPath).size;
+      if (resultSize <= maxSizeBytes) {
+        tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
+        return { success: true };
+      }
     }
 
-    // Step 3: Frame reduction if still too large
-    if (resultSize > maxSizeBytes && info.frames > 2) {
+    // Steps 1 & 2 failed - check if we can proceed with frame reduction
+    if (!allowFrameReduction) {
+      const estimatedFrameReduction = Math.ceil((1 - (maxSizeBytes / resultSize)) * 100);
+      tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
+      return {
+        success: false,
+        requiresApproval: true,
+        approvalMessage: `The file is still ${(resultSize / (1024 * 1024)).toFixed(2)}MB after optimization. To reach ${(maxSizeBytes / (1024 * 1024)).toFixed(1)}MB, approximately ${estimatedFrameReduction}% of frames may need to be removed. This will affect animation smoothness.`,
+        tempOutputPath: outputPath
+      };
+    }
+
+    // STEP 3: User approved - apply controlled frame reduction
+    if (info.frames > 2) {
       const outputInfo = await getGifInfo(outputPath);
       let currentFrames = outputInfo.frames;
       
       while (resultSize > maxSizeBytes && currentFrames > 1) {
-        const framesToKeep = Math.max(1, currentFrames - Math.ceil(currentFrames * 0.1));
+        const framesToKeep = Math.max(1, Math.floor(currentFrames * 0.85));
         
         if (framesToKeep >= currentFrames) break;
         
         const tempPath = outputPath + ".temp.gif";
+        tempFiles.push(tempPath);
         fs.copyFileSync(outputPath, tempPath);
         
-        cmd = `gifsicle "${tempPath}" "#0-${framesToKeep - 1}" -o "${outputPath}"`;
+        const step = Math.ceil(currentFrames / framesToKeep);
+        let frameSelector = [];
+        for (let i = 0; i < currentFrames; i += step) {
+          frameSelector.push(`#${i}`);
+        }
+        
+        cmd = `gifsicle "${tempPath}" ${frameSelector.join(" ")} -o "${outputPath}"`;
         await execAsync(cmd);
         
-        fs.unlinkSync(tempPath);
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        tempFiles = tempFiles.filter(f => f !== tempPath);
+        
         resultSize = fs.statSync(outputPath).size;
         currentFrames = framesToKeep;
       }
     }
 
-    // Cleanup temp dimension file
-    if (tempDimensionPath && fs.existsSync(tempDimensionPath)) {
-      fs.unlinkSync(tempDimensionPath);
-    }
+    tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
 
+    // STEP 4: Hard stop if still over limit
     if (resultSize > maxSizeBytes) {
       return { 
         success: false, 
-        error: `Could not reduce file to ${(maxSizeBytes / (1024 * 1024)).toFixed(1)}MB. Best result: ${(resultSize / (1024 * 1024)).toFixed(2)}MB` 
+        error: `Conversion not possible without unacceptable quality loss. Best result: ${(resultSize / (1024 * 1024)).toFixed(2)}MB (target: ${(maxSizeBytes / (1024 * 1024)).toFixed(1)}MB)` 
       };
     }
 
@@ -396,6 +428,32 @@ async function cleanupExpiredFiles() {
   }
 }
 
+// Middleware to check homepage authentication
+function requireHomeAuth(req: any, res: any, next: any) {
+  const isAuthenticated = req.session?.homeAuthenticated === true;
+  const expiresAt = req.session?.homeAuthExpires;
+  
+  if (!isAuthenticated || !expiresAt || new Date(expiresAt) <= new Date()) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
+  
+  next();
+}
+
+// Routes that don't require home authentication
+// Uses prefix matching - any path starting with these prefixes is public
+const publicPathPrefixes = [
+  "/health",
+  "/home/",
+  "/temp-drive/share/",
+  "/download/",
+  "/files/",
+];
+
+function isPublicPath(path: string): boolean {
+  return publicPathPrefixes.some(prefix => path.startsWith(prefix));
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -403,70 +461,195 @@ export async function registerRoutes(
   
   cron.schedule("* * * * *", cleanupExpiredFiles);
 
+  // Apply home auth middleware to protected API routes
+  app.use("/api", (req, res, next) => {
+    if (isPublicPath(req.path)) {
+      return next();
+    }
+    return requireHomeAuth(req, res, next);
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  app.post("/api/convert", gifUpload.single("file"), async (req, res) => {
+  // Homepage Authentication Routes
+  // Uses express-session directly to avoid conflicts with Temp Drive admin sessions
+  app.get("/api/home/session", async (req: any, res) => {
+    if (!req.session) {
+      return res.json({ authenticated: false });
+    }
+    
+    const isAuthenticated = req.session.homeAuthenticated === true;
+    const expiresAt = req.session.homeAuthExpires;
+    
+    if (!isAuthenticated || !expiresAt || new Date(expiresAt) <= new Date()) {
+      req.session.homeAuthenticated = false;
+      return res.json({ authenticated: false });
+    }
+
+    return res.json({ authenticated: true });
+  });
+
+  app.post("/api/home/login", async (req: any, res) => {
+    if (!req.session) {
+      return res.status(500).json({ message: "Session not available" });
+    }
+    
+    const { password } = req.body;
+    const clientIp = req.ip || "unknown";
+
+    if (!password) {
+      return res.status(400).json({ message: "Password is required" });
+    }
+
+    // Check if IP is blocked
+    const isBlocked = await storage.isIpBlocked(clientIp);
+    if (isBlocked) {
+      return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
+    }
+
+    // Verify admin password
+    const isValidPassword = await verifyAdminPassword(password);
+    if (!isValidPassword) {
+      const { blocked, remainingAttempts } = await checkAndRecordLoginAttempt(clientIp, "home", null, false);
+      if (blocked) {
+        return res.status(403).json({ message: "IP blocked due to too many failed attempts. Try again in 48 hours." });
+      }
+      return res.status(401).json({ message: `Invalid password. ${remainingAttempts} attempts remaining.` });
+    }
+
+    // Clear failed attempts on success
+    await checkAndRecordLoginAttempt(clientIp, "home", null, true);
+
+    // Store authentication state directly in session (separate from Temp Drive admin)
+    req.session.homeAuthenticated = true;
+    req.session.homeAuthExpires = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+
+    return res.json({ success: true });
+  });
+
+  app.post("/api/home/logout", async (req: any, res) => {
+    if (req.session) {
+      req.session.homeAuthenticated = false;
+      delete req.session.homeAuthExpires;
+    }
+    return res.json({ success: true });
+  });
+
+  app.post("/api/image/metadata", animatedImageUpload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const metadata = await getImageMetadata(req.file.path, req.file.mimetype);
+      const fileSize = fs.statSync(req.file.path).size;
+
+      fs.unlinkSync(req.file.path);
+
+      res.json({
+        width: metadata.width,
+        height: metadata.height,
+        fileSize,
+        frames: metadata.frames,
+        format: metadata.format,
+        isAnimated: metadata.isAnimated
+      });
+    } catch (error: any) {
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      res.status(500).json({ message: error.message || "Failed to get metadata" });
+    }
+  });
+
+  app.post("/api/convert", animatedImageUpload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
       const mode = req.body.mode;
+      const allowFrameReduction = req.body.allowFrameReduction === "true";
+      
       if (mode !== "yalla_ludo" && mode !== "custom") {
         fs.unlinkSync(req.file.path);
         return res.status(400).json({ message: "Invalid conversion mode" });
       }
 
+      const originalSize = fs.statSync(req.file.path).size;
+      const originalFilename = req.file.originalname;
+      const mimeType = req.file.mimetype;
+
+      let workingPath = req.file.path;
+      let tempGifPath: string | null = null;
+
+      if (mimeType !== "image/gif") {
+        tempGifPath = req.file.path + ".converted.gif";
+        const convResult = await convertToGif(req.file.path, tempGifPath);
+        if (!convResult.success) {
+          fs.unlinkSync(req.file.path);
+          return res.status(422).json({ message: convResult.error || "Failed to convert to GIF" });
+        }
+        workingPath = tempGifPath;
+      }
+
+      const originalInfo = await getGifInfo(workingPath);
+
       let optimizeOptions: OptimizeOptions;
 
       if (mode === "yalla_ludo") {
-        // Yalla Ludo preset: 180x180 target dimensions, max 2MB
         optimizeOptions = {
-          maxSizeBytes: 2 * 1024 * 1024,
-          targetWidth: 180,
-          targetHeight: 180,
+          maxSizeBytes: MAX_SIZE_BYTES,
+          minWidth: MIN_DIMENSION,
+          minHeight: MIN_DIMENSION,
+          allowFrameReduction
         };
       } else {
         const parsed = conversionRequestSchema.safeParse({
           mode: "custom",
           maxFileSize: parseFloat(req.body.maxFileSize || "2"),
-          targetWidth: req.body.targetWidth ? parseInt(req.body.targetWidth) : undefined,
-          targetHeight: req.body.targetHeight ? parseInt(req.body.targetHeight) : undefined,
         });
 
         if (!parsed.success) {
+          if (tempGifPath && fs.existsSync(tempGifPath)) fs.unlinkSync(tempGifPath);
           fs.unlinkSync(req.file.path);
           return res.status(400).json({ message: "Invalid custom settings" });
         }
 
         optimizeOptions = {
           maxSizeBytes: (parsed.data.maxFileSize || 2) * 1024 * 1024,
-          targetWidth: parsed.data.targetWidth,
-          targetHeight: parsed.data.targetHeight,
+          minWidth: MIN_DIMENSION,
+          minHeight: MIN_DIMENSION,
+          allowFrameReduction
         };
       }
-
-      const originalInfo = await getGifInfo(req.file.path);
-      const originalSize = fs.statSync(req.file.path).size;
-      const originalFilename = req.file.originalname;
 
       const outputId = randomUUID();
       const outputPath = path.join(CONVERTED_DIR, `${outputId}.gif`);
 
-      const result = await optimizeGif(
-        req.file.path,
-        outputPath,
-        optimizeOptions
-      );
+      const result = await optimizeAnimatedGif(workingPath, outputPath, optimizeOptions);
 
-      fs.unlinkSync(req.file.path);
+      if (tempGifPath && fs.existsSync(tempGifPath)) fs.unlinkSync(tempGifPath);
+      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
+      if (result.requiresApproval) {
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        return res.status(200).json({
+          id: outputId,
+          success: false,
+          requiresApproval: true,
+          approvalMessage: result.approvalMessage,
+          originalSize,
+          originalWidth: originalInfo.width,
+          originalHeight: originalInfo.height,
+          frameCount: originalInfo.frames
+        });
+      }
 
       if (!result.success) {
-        if (fs.existsSync(outputPath)) {
-          fs.unlinkSync(outputPath);
-        }
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
         return res.status(422).json({ message: result.error });
       }
 
@@ -747,7 +930,12 @@ export async function registerRoutes(
       }
 
       if (!admin.totpSetupComplete) {
-        const qrCode = await generateTotpQRCode(admin.totpSecret!);
+        // Generate new TOTP secret if it doesn't exist (e.g., after reset)
+        if (!admin.totpSecret) {
+          admin.totpSecret = generateTotpSecret();
+          await storage.saveTempDriveAdmin(admin);
+        }
+        const qrCode = await generateTotpQRCode(admin.totpSecret);
         return res.json({
           requiresTotpSetup: true,
           qrCode,
