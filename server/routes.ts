@@ -526,7 +526,14 @@ export async function registerRoutes(
     req.session.homeAuthenticated = true;
     req.session.homeAuthExpires = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
 
-    return res.json({ success: true });
+    // Explicitly save session before responding
+    req.session.save((err: any) => {
+      if (err) {
+        console.error("Session save error:", err);
+        return res.status(500).json({ message: "Failed to save session" });
+      }
+      return res.json({ success: true });
+    });
   });
 
   app.post("/api/home/logout", async (req: any, res) => {
