@@ -18,13 +18,15 @@ declare module "http" {
 
 // Session middleware
 const sessionSecret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
+// Only use secure cookies if explicitly enabled (for HTTPS deployments)
+const useSecureCookies = process.env.SECURE_COOKIES === "true";
 app.use(
   session({
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: useSecureCookies,
       httpOnly: true,
       maxAge: 4 * 60 * 60 * 1000, // 4 hours
     },
