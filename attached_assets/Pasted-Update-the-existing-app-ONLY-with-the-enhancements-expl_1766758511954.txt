@@ -1,0 +1,109 @@
+Update the existing app ONLY with the enhancements explicitly listed below.
+Do NOT refactor, redesign, optimize, or change any existing logic, UI, workflows, processing order, or behaviors outside what is described here.
+
+────────────────────────────────
+ENHANCEMENT 1 — Pre-Processing Metadata Display
+────────────────────────────────
+When the user selects an input animated image (GIF, animated WebP, or animated AVIF), BEFORE any processing occurs, display the following read-only information:
+- Original file size (MB)
+- Original width (pixels)
+- Original height (pixels)
+
+This step must not modify the file in any way and must occur before any conversion or optimization logic runs.
+
+────────────────────────────────
+ENHANCEMENT 2 — Animated Image Processing Rules
+────────────────────────────────
+Process animated images using the rules below, without changing any other part of the app:
+
+1) REGARDLESS of input type (GIF, animated WebP, animated AVIF), the FINAL OUTPUT FORMAT MUST ALWAYS BE GIF.
+2) Final output file size must be ≤ 2 MB.
+3) Final output must be at least 180 × 180 pixels in both width and height.
+4) Preserve animation integrity at all times: frame order, frame timing, loop behavior, and aspect ratio must remain correct.
+5) If the original width AND height are both ≥ 180 px:
+   - Do NOT resize or pad the animation.
+   - Only apply compression if needed to reach ≤ 2 MB.
+6) If either width OR height is < 180 px:
+   - Do NOT scale the animation.
+   - Expand the canvas to at least 180 × 180 px using padding.
+7) Padding must:
+   - Preserve animation
+   - Center the original animation
+   - Use a background color derived from the image itself (dominant or average edge color) to minimize visual noticeability.
+8) No stretching, no cropping, no frame removal, no flattening, and no conversion to video.
+9) Apply adaptive GIF-safe compression (palette optimization, frame optimization, minimal quality tuning) only as much as required to reach ≤ 2 MB.
+
+────────────────────────────────
+ENHANCEMENT 3 — Strict Fallback & User-Approved Override (EXECUTION ORDER IS MANDATORY)
+────────────────────────────────
+The following steps MUST run in this exact order. Do NOT skip or reorder them.
+
+STEP 1 — Automatic, Non-Destructive Optimization
+- Apply all standard GIF-safe optimizations.
+- No frame loss, no timing change, no resolution change.
+- If output ≤ 2 MB → STOP (success).
+
+STEP 2 — Automatic Fallback (Still Non-Destructive)
+- Further reduce the color palette using GIF-safe quantization only.
+- No frame loss, no timing change, no resolution or canvas change.
+- If output ≤ 2 MB → STOP (success).
+
+STEP 3 — User-Approved Override (LAST RESORT ONLY)
+- Trigger this step ONLY if Steps 1 and 2 fail.
+- Explicitly prompt the user explaining that further reduction requires controlled degradation.
+- Proceed ONLY if the user explicitly approves.
+- Apply minimal, evenly distributed frame reduction and recalculate timing.
+- If output ≤ 2 MB → STOP (success).
+
+STEP 4 — Hard Stop
+- If the user declines OR size still exceeds 2 MB:
+  - Abort processing.
+  - Display a clear message explaining conversion is not possible without unacceptable quality loss.
+  - Do NOT apply further degradation.
+
+────────────────────────────────
+ENHANCEMENT 4 — Homepage Authentication & Access Control
+────────────────────────────────
+Add authentication protection ONLY to the main homepage that lists this app and the other apps, with the following strict rules:
+
+1) Accessing the MAIN HOMEPAGE must require a password prompt.
+2) The password MUST be the SAME password as the existing admin user password.
+3) If the admin user successfully logs in from a browser:
+   - Do NOT prompt again for that browser/session.
+   - Use a secure server-side session or token-based mechanism.
+4) Failed login handling:
+   - After 3 consecutive failed login attempts from the same IP address, that IP MUST be blocked.
+   - The block duration must be configurable via environment variables.
+5) Authentication and IP blocking must be enforced on the backend and work correctly behind Docker, Unraid, and reverse proxies.
+
+IMPORTANT EXCLUSION — TOOL LINKS (MANDATORY):
+- Any links generated specifically by the **Sharing Tab tool** MUST remain directly accessible.
+- Any links generated specifically by the **Temp Drive tool** MUST remain directly accessible.
+- These tool-generated links MUST NOT require homepage authentication.
+- These tool-generated links MUST NOT be affected by homepage login sessions or IP blocking rules.
+- Authentication logic must apply ONLY to the main homepage and MUST explicitly exclude routes used by the Sharing Tab tool and the Temp Drive tool.
+
+────────────────────────────────
+ENHANCEMENT 5 — Deployment & Hosting Constraints (MANDATORY)
+────────────────────────────────
+All updates MUST be compatible with the following deployment pipeline:
+- Source code published to GitHub
+- Docker image built and pushed to Docker Hub
+- Container deployed and run in Unraid using Docker
+
+Deployment requirements:
+- No hard-coded filesystem paths
+- No reliance on Replit-specific runtime behavior
+- Stateless processing
+- All required binaries installed via Dockerfile
+- Configuration (admin password, IP block duration, etc.) driven by environment variables
+- App must run unmodified in Unraid Docker
+
+────────────────────────────────
+IMPORTANT CONSTRAINTS
+────────────────────────────────
+- No existing functionality may be changed outside these enhancements.
+- Homepage authentication must NEVER restrict Sharing Tab or Temp Drive tool links.
+- Admin login must persist per browser/session.
+- IP blocking must not be bypassable via refresh.
+- All outputs must remain valid animated GIF files.
