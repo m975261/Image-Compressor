@@ -47,6 +47,9 @@ export async function generateTotpQRCode(secret: string): Promise<string> {
 }
 
 export function verifyTotp(secret: string, token: string): boolean {
+  // Trim and clean the token
+  const cleanToken = token.toString().trim().replace(/\s/g, '');
+  
   const totp = new OTPAuth.TOTP({
     issuer: APP_NAME,
     label: "admin",
@@ -55,7 +58,8 @@ export function verifyTotp(secret: string, token: string): boolean {
     period: 30,
     secret: OTPAuth.Secret.fromBase32(secret),
   });
-  const delta = totp.validate({ token, window: 1 });
+  // Window of 2 allows for 60 seconds before/after to account for time sync issues
+  const delta = totp.validate({ token: cleanToken, window: 2 });
   return delta !== null;
 }
 
