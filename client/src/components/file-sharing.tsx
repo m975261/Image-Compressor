@@ -1,22 +1,24 @@
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import { uploadWithProgress, UploadProgress } from "@/lib/upload-with-progress";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Progress } from "@/components/ui/progress";
 import { 
   Upload, 
   Copy, 
   Trash2, 
   AlertCircle, 
-  CheckCircle, 
   Loader2,
   X,
   Clock,
   Link2,
-  FileIcon
+  FileIcon,
+  ExternalLink
 } from "lucide-react";
 import type { UploadedFile } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +29,7 @@ export function FileSharing() {
   const [file, setFile] = useState<File | null>(null);
   const [expiryMinutes, setExpiryMinutes] = useState(5);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const { toast } = useToast();
 
   const { data: uploadedFiles = [], isLoading: filesLoading } = useQuery<UploadedFile[]>({
@@ -88,26 +91,26 @@ export function FileSharing() {
       formData.append("file", file);
       formData.append("expiryHours", (expiryMinutes / 60).toString());
 
-      const response = await fetch("/api/files/upload", {
-        method: "POST",
-        body: formData,
+      setUploadProgress({ loaded: 0, total: file.size, percentage: 0 });
+
+      return uploadWithProgress<UploadedFile>({
+        url: "/api/files/upload",
+        formData,
+        onProgress: setUploadProgress
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Upload failed");
-      }
-
-      return response.json() as Promise<UploadedFile>;
     },
     onSuccess: () => {
       setFile(null);
+      setUploadProgress(null);
       queryClient.invalidateQueries({ queryKey: ["/api/files"] });
       toast({
         title: "File uploaded successfully",
         description: "Your download link is ready to share",
       });
     },
+    onError: () => {
+      setUploadProgress(null);
+    }
   });
 
   const deleteMutation = useMutation({
@@ -207,6 +210,7 @@ export function FileSharing() {
                   size="icon" 
                   variant="ghost" 
                   onClick={clearFile}
+                  disabled={uploadMutation.isPending}
                   data-testid="button-clear-selected-file"
                 >
                   <X className="w-4 h-4" />
@@ -230,6 +234,7 @@ export function FileSharing() {
                   max={1440}
                   step={5}
                   className="w-full"
+                  disabled={uploadMutation.isPending}
                   data-testid="slider-expiry"
                 />
                 <p className="text-xs text-muted-foreground">
@@ -249,24 +254,45 @@ export function FileSharing() {
       </Card>
 
       {file && (
-        <Button
-          className="w-full py-6 text-base font-medium"
-          disabled={uploadMutation.isPending}
-          onClick={() => uploadMutation.mutate()}
-          data-testid="button-upload"
-        >
-          {uploadMutation.isPending ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Uploading...
-            </>
-          ) : (
-            <>
-              <Upload className="w-4 h-4 mr-2" />
-              Upload & Get Link
-            </>
+        <>
+          {uploadMutation.isPending && uploadProgress && (
+            <Card>
+              <CardContent className="p-6">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                      <span className="text-sm font-medium">Uploading...</span>
+                    </div>
+                    <span className="text-sm font-mono text-muted-foreground" data-testid="text-upload-progress">
+                      {formatFileSize(uploadProgress.loaded)} / {formatFileSize(uploadProgress.total)} ({uploadProgress.percentage}%)
+                    </span>
+                  </div>
+                  <Progress value={uploadProgress.percentage} className="h-2" />
+                </div>
+              </CardContent>
+            </Card>
           )}
-        </Button>
+          
+          <Button
+            className="w-full py-6 text-base font-medium"
+            disabled={uploadMutation.isPending}
+            onClick={() => uploadMutation.mutate()}
+            data-testid="button-upload"
+          >
+            {uploadMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Uploading... {uploadProgress?.percentage || 0}%
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4 mr-2" />
+                Upload & Get Link
+              </>
+            )}
+          </Button>
+        </>
       )}
 
       {uploadMutation.isError && (
@@ -294,7 +320,7 @@ export function FileSharing() {
                 key={uploadedFile.id} 
                 file={uploadedFile} 
                 onDelete={() => deleteMutation.mutate(uploadedFile.id)}
-                onCopy={() => copyToClipboard(uploadedFile.downloadUrl)}
+                onCopy={() => copyToClipboard(`/files/preview/${uploadedFile.id}`)}
                 isDeleting={deleteMutation.isPending}
               />
             ))}
@@ -356,6 +382,8 @@ function FileCard({ file, onDelete, onCopy, isDeleting }: FileCardProps) {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
+  const previewUrl = `/files/preview/${file.id}`;
+
   return (
     <Card data-testid={`card-file-${file.id}`}>
       <CardContent className="p-4">
@@ -370,6 +398,14 @@ function FileCard({ file, onDelete, onCopy, isDeleting }: FileCardProps) {
                 {file.fileName}
               </p>
               <div className="flex items-center gap-1 flex-shrink-0">
+                <Button 
+                  size="icon" 
+                  variant="ghost"
+                  onClick={() => window.open(`${window.location.origin}${previewUrl}`, '_blank')}
+                  data-testid={`button-view-${file.id}`}
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </Button>
                 <Button 
                   size="icon" 
                   variant="ghost"
@@ -409,7 +445,7 @@ function FileCard({ file, onDelete, onCopy, isDeleting }: FileCardProps) {
               <Link2 className="w-4 h-4 text-muted-foreground flex-shrink-0" />
               <Input
                 readOnly
-                value={`${window.location.origin}${file.downloadUrl}`}
+                value={`${window.location.origin}${previewUrl}`}
                 className="h-auto py-1 px-2 text-xs font-mono bg-transparent border-0 focus-visible:ring-0"
                 data-testid={`input-download-link-${file.id}`}
               />
