@@ -1270,6 +1270,7 @@ export async function registerRoutes(
 
   app.post("/api/temp-drive/share/access/:token", async (req, res) => {
     try {
+      console.log("Share access request for token:", req.params.token);
       const clientIp = getClientIp(req);
       
       if (await storage.isIpBlocked(clientIp)) {
@@ -1283,6 +1284,8 @@ export async function registerRoutes(
 
       const { token } = req.params;
       const share = await storage.getTempDriveShareByToken(token);
+      console.log("Share found:", share ? share.id : "null");
+      
       if (!share || !share.active) {
         return res.status(404).json({ message: "Share not found or disabled" });
       }
@@ -1302,7 +1305,10 @@ export async function registerRoutes(
           return res.status(400).json({ message: "Password required" });
         }
 
+        console.log("Verifying password...");
         const isValidPassword = await verifyPassword(parsed.data.password, share.passwordHash);
+        console.log("Password valid:", isValidPassword);
+        
         if (!isValidPassword) {
           const { blocked, remainingAttempts } = await checkAndRecordLoginAttempt(clientIp, "share", share.id, false);
           if (blocked) {
@@ -1315,6 +1321,7 @@ export async function registerRoutes(
       await checkAndRecordLoginAttempt(clientIp, "share", share.id, true);
 
       const sessionToken = generateSessionToken();
+      console.log("Creating session...");
       await storage.saveTempDriveSession({
         token: sessionToken,
         type: "share",
@@ -1322,9 +1329,11 @@ export async function registerRoutes(
         expiresAt: getSessionExpiryDate().toISOString(),
         createdAt: new Date().toISOString()
       });
+      console.log("Session created successfully");
 
       res.json({ token: sessionToken, type: "share", shareId: share.id });
     } catch (error: any) {
+      console.error("Share access error:", error);
       res.status(500).json({ message: error.message || "Access failed" });
     }
   });

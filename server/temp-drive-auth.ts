@@ -3,7 +3,7 @@ import * as OTPAuth from "otpauth";
 import QRCode from "qrcode";
 import crypto from "crypto";
 
-const SALT_ROUNDS = 12;
+const SALT_ROUNDS = 10;
 const SESSION_DURATION_HOURS = 4;
 const APP_NAME = "FileTools TempDrive";
 

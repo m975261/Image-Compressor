@@ -16,6 +16,21 @@ declare module "http" {
   }
 }
 
+// CORS middleware for production (handles reverse proxy scenarios)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-Token");
+  }
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // Session middleware
 const sessionSecret = process.env.SESSION_SECRET || "dev-secret-change-in-production";
 // Only use secure cookies if explicitly enabled (for HTTPS deployments)
@@ -29,6 +44,7 @@ app.use(
       secure: useSecureCookies,
       httpOnly: true,
       maxAge: 4 * 60 * 60 * 1000, // 4 hours
+      sameSite: useSecureCookies ? "none" : "lax",
     },
   })
 );
