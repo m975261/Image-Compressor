@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import fs from "fs";
+import fsPromises from "fs/promises";
 import path from "path";
 import type { 
   UploadedFile, 
@@ -89,6 +90,8 @@ export class PersistentStorage implements IStorage {
   private conversionResults: Map<string, ConversionResult>;
   private conversionVersion: number;
   private lastConversionDate: string;
+  private saveFilesDebounceTimer: NodeJS.Timeout | null = null;
+  private saveConversionsDebounceTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     this.uploadedFiles = new Map();
@@ -136,21 +139,27 @@ export class PersistentStorage implements IStorage {
   }
 
   private saveFilesToDisk(): void {
-    try {
-      const data = Object.fromEntries(this.uploadedFiles);
-      fs.writeFileSync(FILES_METADATA_PATH, JSON.stringify(data, null, 2));
-    } catch (error) {
-      console.error("Error saving files metadata:", error);
+    if (this.saveFilesDebounceTimer) {
+      clearTimeout(this.saveFilesDebounceTimer);
     }
+    this.saveFilesDebounceTimer = setTimeout(() => {
+      this.saveFilesDebounceTimer = null;
+      const data = Object.fromEntries(this.uploadedFiles);
+      fsPromises.writeFile(FILES_METADATA_PATH, JSON.stringify(data, null, 2))
+        .catch(err => console.error("Error saving files metadata:", err));
+    }, 500);
   }
 
   private saveConversionsToDisk(): void {
-    try {
-      const data = Object.fromEntries(this.conversionResults);
-      fs.writeFileSync(CONVERSIONS_METADATA_PATH, JSON.stringify(data, null, 2));
-    } catch (error) {
-      console.error("Error saving conversions metadata:", error);
+    if (this.saveConversionsDebounceTimer) {
+      clearTimeout(this.saveConversionsDebounceTimer);
     }
+    this.saveConversionsDebounceTimer = setTimeout(() => {
+      this.saveConversionsDebounceTimer = null;
+      const data = Object.fromEntries(this.conversionResults);
+      fsPromises.writeFile(CONVERSIONS_METADATA_PATH, JSON.stringify(data, null, 2))
+        .catch(err => console.error("Error saving conversions metadata:", err));
+    }, 500);
   }
 
   private saveVersionToDisk(): void {
