@@ -536,7 +536,11 @@ export async function registerRoutes(
   });
 
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    res.json({ 
+      status: "ok", 
+      timestamp: new Date().toISOString(),
+      version: "20260107-163010"
+    });
   });
 
   // Homepage Authentication Routes

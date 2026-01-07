@@ -22,6 +22,9 @@ Preferred communication style: Simple, everyday language.
 - Always push updates to this repo when syncing to GitHub
 - Do NOT use any other repo name for this project
 
+**Docker Hub**: muaeabudhabi/image-comp:latest
+- Docker images are built automatically from GitHub pushes
+
 ## System Architecture
 
 ### Frontend Architecture
