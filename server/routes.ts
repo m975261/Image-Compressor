@@ -510,7 +510,7 @@ function requireHomeAuth(req: any, res: any, next: any) {
 const publicPathPrefixes = [
   "/health",
   "/home/",
-  "/temp-drive/share/",
+  "/temp-drive/",  // Temp Drive has its own auth system
   "/download/",
   "/files/",
 ];
