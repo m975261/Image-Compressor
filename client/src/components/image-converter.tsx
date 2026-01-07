@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,25 +28,41 @@ import {
   AlertTriangle,
   Info
 } from "lucide-react";
+import { uploadWithProgress, UploadProgress } from "@/lib/upload-with-progress";
 import type { ConversionMode, ConversionResult, ImageMetadata } from "@shared/schema";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = ["image/gif", "image/webp", "image/avif"];
 
+interface CustomSettings {
+  maxFileSize: number;
+  minWidth: number;
+  minHeight: number;
+  maxWidth: number;
+  maxHeight: number;
+}
+
 export function ImageConverter() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [mode, setMode] = useState<ConversionMode | null>(null);
-  const [customSettings, setCustomSettings] = useState({
+  const [customSettings, setCustomSettings] = useState<CustomSettings>({
     maxFileSize: 2,
+    minWidth: 180,
+    minHeight: 180,
+    maxWidth: 0,
+    maxHeight: 0,
   });
   const [validationError, setValidationError] = useState<string | null>(null);
   const [result, setResult] = useState<ConversionResult | null>(null);
   const [metadata, setMetadata] = useState<ImageMetadata | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [conversionStatus, setConversionStatus] = useState<string>("");
   const [approvalDialog, setApprovalDialog] = useState<{
     open: boolean;
     message: string;
   }>({ open: false, message: "" });
+  const statusIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const validateAnimatedImage = useCallback((file: File): string | null => {
     if (!ALLOWED_TYPES.includes(file.type)) {
@@ -80,6 +96,8 @@ export function ImageConverter() {
     setResult(null);
     setValidationError(null);
     setMetadata(null);
+    setUploadProgress(null);
+    setConversionStatus("");
 
     if (!selectedFile) {
       setFile(null);
@@ -122,6 +140,16 @@ export function ImageConverter() {
     setResult(null);
     setValidationError(null);
     setMetadata(null);
+    setUploadProgress(null);
+    setConversionStatus("");
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (statusIntervalRef.current) {
+        clearInterval(statusIntervalRef.current);
+      }
+    };
   }, []);
 
   const convertMutation = useMutation({
@@ -135,22 +163,35 @@ export function ImageConverter() {
 
       if (mode === "custom") {
         formData.append("maxFileSize", customSettings.maxFileSize.toString());
+        formData.append("minWidth", customSettings.minWidth.toString());
+        formData.append("minHeight", customSettings.minHeight.toString());
+        if (customSettings.maxWidth > 0) {
+          formData.append("maxWidth", customSettings.maxWidth.toString());
+        }
+        if (customSettings.maxHeight > 0) {
+          formData.append("maxHeight", customSettings.maxHeight.toString());
+        }
       }
 
-      const response = await fetch("/api/convert", {
-        method: "POST",
-        body: formData,
+      setUploadProgress({ loaded: 0, total: file.size, percentage: 0 });
+      setConversionStatus("Uploading...");
+
+      const response = await uploadWithProgress<ConversionResult>({
+        url: "/api/convert",
+        formData,
+        onProgress: (progress) => {
+          setUploadProgress(progress);
+          if (progress.percentage >= 100) {
+            setConversionStatus("Processing image...");
+          }
+        }
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Conversion failed");
-      }
-
-      return data as ConversionResult;
+      return response;
     },
     onSuccess: (data) => {
+      setUploadProgress(null);
+      setConversionStatus("");
       if (data.requiresApproval) {
         setApprovalDialog({
           open: true,
@@ -160,6 +201,10 @@ export function ImageConverter() {
         setResult(data);
       }
     },
+    onError: () => {
+      setUploadProgress(null);
+      setConversionStatus("");
+    }
   });
 
   const handleApprovalConfirm = () => {
@@ -186,7 +231,7 @@ export function ImageConverter() {
     });
   };
 
-  const canConvert = file && mode && (mode === "yalla_ludo" || customSettings.maxFileSize > 0);
+  const canConvert = file && mode && (mode === "yalla_ludo" || (customSettings.maxFileSize > 0 && customSettings.minWidth > 0 && customSettings.minHeight > 0));
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -251,6 +296,7 @@ export function ImageConverter() {
                   size="icon" 
                   variant="ghost" 
                   onClick={clearFile}
+                  disabled={convertMutation.isPending}
                   data-testid="button-clear-file"
                 >
                   <X className="w-4 h-4" />
@@ -320,7 +366,7 @@ export function ImageConverter() {
                     Max 2MB
                   </Badge>
                   <Badge variant="outline" className="text-xs font-mono">
-                    180x180px
+                    180x180px min
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -340,13 +386,13 @@ export function ImageConverter() {
                 <div>
                   <span className="font-medium">Custom Settings</span>
                   <p className="text-sm text-muted-foreground">
-                    Define your own size limits
+                    Define your own size and dimension limits
                   </p>
                 </div>
               </div>
 
               {mode === "custom" && (
-                <div className="space-y-4 ml-8">
+                <div className="space-y-4 ml-8" onClick={(e) => e.stopPropagation()}>
                   <div className="space-y-2">
                     <Label htmlFor="maxFileSize" className="text-sm font-medium">
                       Max File Size (MB) *
@@ -366,8 +412,93 @@ export function ImageConverter() {
                       data-testid="input-max-file-size"
                     />
                   </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="minWidth" className="text-sm font-medium">
+                        Min Width (px) *
+                      </Label>
+                      <Input
+                        id="minWidth"
+                        type="number"
+                        min={1}
+                        max={2000}
+                        step={1}
+                        value={customSettings.minWidth}
+                        onChange={(e) => setCustomSettings(prev => ({
+                          ...prev,
+                          minWidth: parseInt(e.target.value) || 0
+                        }))}
+                        className="font-mono text-right"
+                        data-testid="input-min-width"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="minHeight" className="text-sm font-medium">
+                        Min Height (px) *
+                      </Label>
+                      <Input
+                        id="minHeight"
+                        type="number"
+                        min={1}
+                        max={2000}
+                        step={1}
+                        value={customSettings.minHeight}
+                        onChange={(e) => setCustomSettings(prev => ({
+                          ...prev,
+                          minHeight: parseInt(e.target.value) || 0
+                        }))}
+                        className="font-mono text-right"
+                        data-testid="input-min-height"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="maxWidth" className="text-sm font-medium">
+                        Max Width (px)
+                      </Label>
+                      <Input
+                        id="maxWidth"
+                        type="number"
+                        min={0}
+                        max={4000}
+                        step={1}
+                        value={customSettings.maxWidth || ""}
+                        placeholder="Original"
+                        onChange={(e) => setCustomSettings(prev => ({
+                          ...prev,
+                          maxWidth: parseInt(e.target.value) || 0
+                        }))}
+                        className="font-mono text-right"
+                        data-testid="input-max-width"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="maxHeight" className="text-sm font-medium">
+                        Max Height (px)
+                      </Label>
+                      <Input
+                        id="maxHeight"
+                        type="number"
+                        min={0}
+                        max={4000}
+                        step={1}
+                        value={customSettings.maxHeight || ""}
+                        placeholder="Original"
+                        onChange={(e) => setCustomSettings(prev => ({
+                          ...prev,
+                          maxHeight: parseInt(e.target.value) || 0
+                        }))}
+                        className="font-mono text-right"
+                        data-testid="input-max-height"
+                      />
+                    </div>
+                  </div>
+                  
                   <p className="text-xs text-muted-foreground">
-                    Output is always GIF. Small images will be padded to 180x180 minimum.
+                    * Required fields. Leave max width/height empty to keep original dimensions (increased if needed for minimum).
                   </p>
                 </div>
               )}
@@ -385,7 +516,7 @@ export function ImageConverter() {
         {convertMutation.isPending ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Converting...
+            {conversionStatus || "Converting..."}
           </>
         ) : (
           <>
@@ -399,11 +530,23 @@ export function ImageConverter() {
         <Card>
           <CardContent className="p-6">
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                <span className="text-sm font-medium">Processing your GIF...</span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm font-medium">{conversionStatus || "Processing..."}</span>
+                </div>
+                {uploadProgress && uploadProgress.percentage < 100 && (
+                  <span className="text-sm font-mono text-muted-foreground" data-testid="text-conversion-progress">
+                    {formatFileSize(uploadProgress.loaded)} / {formatFileSize(uploadProgress.total)} ({uploadProgress.percentage}%)
+                  </span>
+                )}
               </div>
-              <Progress value={undefined} className="h-2" />
+              <Progress value={uploadProgress?.percentage ?? undefined} className="h-2" />
+              {uploadProgress && uploadProgress.percentage >= 100 && (
+                <p className="text-xs text-muted-foreground">
+                  Processing may take a moment depending on the file size and frame count...
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -466,13 +609,13 @@ export function ImageConverter() {
                     <div className="space-y-2">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Size</span>
-                        <span className="font-mono" data-testid="text-original-size">
+                        <span className="font-mono" data-testid="text-result-original-size">
                           {formatFileSize(result.originalSize)}
                         </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Dimensions</span>
-                        <span className="font-mono" data-testid="text-original-dimensions">
+                        <span className="font-mono" data-testid="text-result-original-dimensions">
                           {result.originalWidth}x{result.originalHeight}
                         </span>
                       </div>
