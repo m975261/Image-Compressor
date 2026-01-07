@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import TempDriveShare from "@/pages/temp-drive-share";
+import FilePreview from "@/pages/file-preview";
 import { HomeLogin } from "@/components/home-login";
 
 function AuthenticatedRouter() {
@@ -23,6 +24,14 @@ function Router() {
     return (
       <Switch>
         <Route path="/temp-drive/share/:token" component={TempDriveShare} />
+      </Switch>
+    );
+  }
+
+  if (location.startsWith("/files/preview/")) {
+    return (
+      <Switch>
+        <Route path="/files/preview/:fileId" component={FilePreview} />
       </Switch>
     );
   }
