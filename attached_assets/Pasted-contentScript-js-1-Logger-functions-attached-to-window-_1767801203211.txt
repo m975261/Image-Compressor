@@ -1,0 +1,23 @@
+contentScript.js:1 Logger functions attached to window successfully
+contentScript.js:1 Content script initialized inside:  https://snap.rotiti.com/temp-drive/share/3a3a8363c1f4fa5686f7a8bd9f1c73da
+contentScript.js:1 Getting iframe URl Object
+content-script.js-Ctkr-J3m.js:1 [Smart Unit Converter] Content script loaded
+content-script.js-Ctkr-J3m.js:1 [Smart Unit Converter] Smart Unit Converter initialized with state: false
+content-script.js-Ctkr-J3m.js:1 [Smart Unit Converter] State changed: false
+contentScript.js:1 Running content script action:  Object
+contentScript.js:1 Running content script in iframe:  false
+contentScript.js:1 Actions executed for cookie management platforms:  Array(0)
+/api/temp-drive/status:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/storage:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/files:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/status:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/files/upload:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/status:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/storage:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/files/upload:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/storage:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/admin/logout:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/storage:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/files:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/files/upload:1  Failed to load resource: the server responded with a status of 401 ()
+/api/temp-drive/status:1  Failed to load resource: the server responded with a status of 401 ()
