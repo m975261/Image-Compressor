@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import fsPromises from "fs/promises";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
@@ -227,6 +228,8 @@ interface OptimizeOptions {
   maxSizeBytes: number;
   minWidth?: number;
   minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
   allowFrameReduction?: boolean;
 }
 
@@ -292,18 +295,41 @@ async function optimizeAnimatedGif(
   options: OptimizeOptions
 ): Promise<OptimizeResult> {
   try {
-    const info = await getGifInfo(inputPath);
+    let info = await getGifInfo(inputPath);
     const currentSize = fs.statSync(inputPath).size;
-    const { maxSizeBytes, minWidth = MIN_DIMENSION, minHeight = MIN_DIMENSION, allowFrameReduction = false } = options;
+    const { maxSizeBytes, minWidth = MIN_DIMENSION, minHeight = MIN_DIMENSION, maxWidth, maxHeight, allowFrameReduction = false } = options;
 
     let workingPath = inputPath;
     let tempFiles: string[] = [];
 
+    // Step -1: Resize if exceeds max dimensions (preserving aspect ratio)
+    if ((maxWidth && info.width > maxWidth) || (maxHeight && info.height > maxHeight)) {
+      const resizePath = inputPath + ".resize.gif";
+      tempFiles.push(resizePath);
+      
+      let resizeSpec = "";
+      if (maxWidth && maxHeight) {
+        resizeSpec = `${maxWidth}x${maxHeight}`;
+      } else if (maxWidth) {
+        resizeSpec = `${maxWidth}x`;
+      } else if (maxHeight) {
+        resizeSpec = `x${maxHeight}`;
+      }
+      
+      try {
+        await execAsync(`convert "${inputPath}" -coalesce -resize "${resizeSpec}>" -layers optimize "${resizePath}"`);
+        workingPath = resizePath;
+        info = await getGifInfo(workingPath);
+      } catch (resizeError: any) {
+        console.error("Resize failed:", resizeError);
+      }
+    }
+
     // Step 0: Ensure minimum dimensions (padding only, no scaling)
     if (info.width < minWidth || info.height < minHeight) {
-      const dimPath = inputPath + ".dim.gif";
+      const dimPath = workingPath + ".dim.gif";
       tempFiles.push(dimPath);
-      const dimResult = await ensureMinimumDimensions(inputPath, dimPath, minWidth, minHeight);
+      const dimResult = await ensureMinimumDimensions(workingPath, dimPath, minWidth, minHeight);
       if (!dimResult.success) {
         tempFiles.forEach(f => fs.existsSync(f) && fs.unlinkSync(f));
         return dimResult;
@@ -413,8 +439,12 @@ async function cleanupExpiredFiles() {
       const ext = path.extname(file.fileName);
       const filePath = path.join(SHARED_DIR, file.id + ext);
       
-      if (fs.existsSync(filePath) && isPathWithinDirectory(filePath, SHARED_DIR)) {
-        fs.unlinkSync(filePath);
+      try {
+        if (fs.existsSync(filePath) && isPathWithinDirectory(filePath, SHARED_DIR)) {
+          await fsPromises.unlink(filePath);
+        }
+      } catch (unlinkErr) {
+        console.error(`Failed to delete file ${filePath}:`, unlinkErr);
       }
       
       await storage.deleteUploadedFile(file.id);
@@ -425,6 +455,41 @@ async function cleanupExpiredFiles() {
     }
   } catch (error) {
     console.error("Error cleaning up expired files:", error);
+  }
+}
+
+async function cleanupTempFiles() {
+  const now = Date.now();
+  const maxAge = 30 * 60 * 1000;
+  
+  const dirsToClean = [UPLOAD_DIR, CONVERTED_DIR];
+  let cleanedCount = 0;
+  
+  for (const dir of dirsToClean) {
+    try {
+      if (!fs.existsSync(dir)) continue;
+      
+      const files = await fsPromises.readdir(dir);
+      for (const file of files) {
+        const filePath = path.join(dir, file);
+        try {
+          const stats = await fsPromises.stat(filePath);
+          const age = now - stats.mtimeMs;
+          
+          if (age > maxAge) {
+            await fsPromises.unlink(filePath);
+            cleanedCount++;
+          }
+        } catch (statErr) {
+        }
+      }
+    } catch (readErr) {
+      console.error(`Failed to read directory ${dir}:`, readErr);
+    }
+  }
+  
+  if (cleanedCount > 0) {
+    console.log(`Cleaned up ${cleanedCount} orphaned temp files`);
   }
 }
 
@@ -460,6 +525,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   
   cron.schedule("* * * * *", cleanupExpiredFiles);
+  cron.schedule("*/5 * * * *", cleanupTempFiles);
 
   // Apply home auth middleware to protected API routes
   app.use("/api", (req, res, next) => {
@@ -614,21 +680,24 @@ export async function registerRoutes(
           allowFrameReduction
         };
       } else {
-        const parsed = conversionRequestSchema.safeParse({
-          mode: "custom",
-          maxFileSize: parseFloat(req.body.maxFileSize || "2"),
-        });
+        const maxFileSize = parseFloat(req.body.maxFileSize || "2");
+        const minWidth = parseInt(req.body.minWidth || "180") || MIN_DIMENSION;
+        const minHeight = parseInt(req.body.minHeight || "180") || MIN_DIMENSION;
+        const maxWidth = parseInt(req.body.maxWidth || "0") || 0;
+        const maxHeight = parseInt(req.body.maxHeight || "0") || 0;
 
-        if (!parsed.success) {
+        if (maxFileSize <= 0 || maxFileSize > 50) {
           if (tempGifPath && fs.existsSync(tempGifPath)) fs.unlinkSync(tempGifPath);
           fs.unlinkSync(req.file.path);
-          return res.status(400).json({ message: "Invalid custom settings" });
+          return res.status(400).json({ message: "Invalid file size limit (must be 0.1-50 MB)" });
         }
 
         optimizeOptions = {
-          maxSizeBytes: (parsed.data.maxFileSize || 2) * 1024 * 1024,
-          minWidth: MIN_DIMENSION,
-          minHeight: MIN_DIMENSION,
+          maxSizeBytes: maxFileSize * 1024 * 1024,
+          minWidth: Math.max(1, Math.min(minWidth, 2000)),
+          minHeight: Math.max(1, Math.min(minHeight, 2000)),
+          maxWidth: maxWidth > 0 ? Math.min(maxWidth, 4000) : undefined,
+          maxHeight: maxHeight > 0 ? Math.min(maxHeight, 4000) : undefined,
           allowFrameReduction
         };
       }
@@ -768,6 +837,36 @@ export async function registerRoutes(
       res.json(validFiles);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to get files" });
+    }
+  });
+
+  app.get("/api/files/info/:fileId", async (req, res) => {
+    try {
+      const fileId = req.params.fileId.split(".")[0];
+      if (!isValidUUID(fileId)) {
+        return res.status(400).json({ message: "Invalid file identifier" });
+      }
+      
+      const file = await storage.getUploadedFile(fileId);
+      
+      if (!file) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      if (new Date(file.expiresAt) <= new Date()) {
+        return res.status(410).json({ message: "File has expired" });
+      }
+
+      res.json({
+        id: file.id,
+        fileName: file.fileName,
+        fileSize: file.fileSize,
+        mimeType: file.mimeType,
+        expiresAt: file.expiresAt,
+        downloadUrl: file.downloadUrl
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to get file info" });
     }
   });
 
